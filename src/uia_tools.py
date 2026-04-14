@@ -202,6 +202,15 @@ def _walk(
     except Exception as ex:
         out.append({"depth": depth, "error": str(ex)})
         return
+    # WinForms DataGrid раздувает дерево (сотни ячеек/строк) и съедает max_nodes до соседних
+    # вкладок палитры («Генератор», «Расчёты»). Сам узел оставляем, вложенность не обходим.
+    try:
+        ct = str(getattr(info, "control_type", "") or "")
+        cn = (getattr(info, "class_name", "") or "").lower()
+        if "DataGrid" in ct or "datagrid" in cn:
+            return
+    except Exception:
+        pass
     try:
         children = ctrl.children()
     except Exception:
@@ -210,7 +219,9 @@ def _walk(
         _walk(ch, depth + 1, max_depth, max_nodes, out, truncated)
 
 
-_MAX_DESC_SCAN = 5000
+# Лимит обхода descendants при поиске клика/ожидания; малый лимит не находит кнопки
+# на вкладках LEP после тяжёлых панелей («Трасса» / DataGrid).
+_MAX_DESC_SCAN = 20000
 
 
 def _descendants_matching(
@@ -377,6 +388,269 @@ def uia_click(
         if str(e) == "ERR_PLATFORM":
             return err_json("ERR_PLATFORM", "Только Windows.", request_id=rid)
         return err_json("ERR_UIA", str(e), request_id=rid)
+    except Exception as e:
+        return err_json("ERR_UIA", str(e), request_id=rid)
+
+
+_DEFAULT_MODAL_TITLE_RE = re.compile(
+    r"Внимание|Ошибка|Нет данных|Подтверждение|Информация|Нет данных трассы|"
+    r"Анализ трассы|Экспорт|Импорт|Корректировка|Журнал|LEP —|LEP -",
+    re.IGNORECASE,
+)
+
+
+def _hwnd_uia(w: Any) -> int:
+    try:
+        return int(w.handle)
+    except Exception:
+        try:
+            h = getattr(w.element_info, "handle", None)
+            return int(h) if h else 0
+        except Exception:
+            return 0
+
+
+def _dpi_scale(hwnd: int) -> float:
+    """Масштаб относительно 96 DPI (Win10+ GetDpiForWindow)."""
+    if not hwnd:
+        return 1.0
+    try:
+        import ctypes
+
+        dpi = int(ctypes.windll.user32.GetDpiForWindow(hwnd))
+        if dpi > 0:
+            return dpi / 96.0
+    except Exception:
+        pass
+    return 1.0
+
+
+def _titlebar_close_screen_coords(rect: Any, scale: float) -> tuple[int, int]:
+    """
+    Экранные координаты клика по кнопке закрытия [X] в заголовке (не Client area).
+    Эвристика для стандартного non-client caption Win32 / #32770.
+    """
+    left, top, right, bottom = int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
+    mx = max(6, int(18 * scale))
+    my = max(6, int(14 * scale))
+    cx = right - mx
+    cy = top + my
+    # не уезжать за левую границу узкого окна
+    min_x = left + max(16, int(24 * scale))
+    if cx < min_x:
+        cx = min_x
+    if cy >= bottom:
+        cy = top + max(8, int(10 * scale))
+    return cx, cy
+
+
+def _modal_candidate_match(
+    w: Any,
+    pat: re.Pattern,
+    max_window_width: int,
+    max_window_height: int,
+) -> tuple[bool, str, str, int, int]:
+    """(ok, title, class_name, rw, rh) для верхнего уровня."""
+    try:
+        if not w.is_visible():
+            return False, "", "", 0, 0
+    except Exception:
+        return False, "", "", 0, 0
+    try:
+        r = w.rectangle()
+        rw, rh = int(r.width()), int(r.height())
+    except Exception:
+        return False, "", "", 0, 0
+    if rw > int(max_window_width) or rh > int(max_window_height):
+        return False, "", "", rw, rh
+    try:
+        title = (w.window_text() or "").strip()
+    except Exception:
+        try:
+            title = (w.element_info.name or "").strip()
+        except Exception:
+            title = ""
+    try:
+        cls = (w.element_info.class_name or "").strip()
+    except Exception:
+        cls = ""
+    is_dialog_shell = "#32770" in cls or "Dialog" in str(getattr(w.element_info, "control_type", ""))
+    title_hit = bool(pat.search(title)) if title else False
+    small_dialog = is_dialog_shell and rw < 900 and rh < 700
+    if not title_hit and not small_dialog:
+        return False, title, cls, rw, rh
+    return True, title, cls, rw, rh
+
+
+def uia_modal_ok(
+    title_regex: str | None = None,
+    button_titles: str = "OK,ОК",
+    max_window_width: int = 1400,
+    max_window_height: int = 950,
+    timeout_sec: float = 5.0,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Закрыть типичный MessageBox Win32 / модалку поверх nanoCAD: обход **top-level** окон Desktop (UIA),
+    а не только потомков nCAD.exe — там кнопка OK часто не находится через uia_click(process_name=...).
+
+    - title_regex: если задан — заголовок окна должен совпадать с regex; иначе используется встроенный
+      список типичных заголовков LEP / системных диалогов.
+    - button_titles: через запятую подписи кнопок в порядке попытки (по умолчанию OK, ОК).
+    - max_window_width/height: отсекаем главное окно nanoCAD (большое); модалки обычно меньше.
+    """
+    rid = parse_request_id(client_request_id)
+    _require_win()
+    from pywinauto import Desktop
+
+    try:
+        pat = re.compile(title_regex, re.IGNORECASE) if (title_regex or "").strip() else _DEFAULT_MODAL_TITLE_RE
+    except re.error as e:
+        return err_json("ERR_VALIDATION", f"title_regex: {e}", request_id=rid)
+
+    buttons = [x.strip() for x in (button_titles or "OK,ОК").split(",") if x.strip()]
+    if not buttons:
+        return err_json("ERR_VALIDATION", "Укажите button_titles", request_id=rid)
+
+    d = Desktop(backend="uia")
+    deadline = time.monotonic() + max(0.5, float(timeout_sec))
+    last_err = ""
+    while time.monotonic() < deadline:
+        try:
+            for w in d.windows():
+                try:
+                    if not w.is_visible():
+                        continue
+                except Exception:
+                    continue
+                ok_c, title, cls, rw, rh = _modal_candidate_match(w, pat, max_window_width, max_window_height)
+                if not ok_c:
+                    continue
+                for bt in buttons:
+                    try:
+                        ch = w.child_window(title=bt, control_type="Button")
+                        if ch.exists(timeout=0.2):
+                            ch.click_input()
+                            return ok_json(
+                                data={
+                                    "closed": True,
+                                    "window_title": title,
+                                    "class_name": cls,
+                                    "button": bt,
+                                    "size": {"w": rw, "h": rh},
+                                },
+                                message="uia_modal_ok",
+                                request_id=rid,
+                            )
+                    except Exception as e2:
+                        last_err = str(e2)
+                        continue
+        except Exception as e:
+            last_err = str(e)
+        time.sleep(0.25)
+    return err_json(
+        "ERR_NOT_FOUND",
+        "Модальное окно с кнопкой из button_titles не найдено за timeout",
+        data={"last_error": last_err, "title_regex": title_regex or str(pat.pattern)},
+        request_id=rid,
+    )
+
+
+def uia_modal_titlebar_close(
+    title_regex: str | None = None,
+    max_window_width: int = 1400,
+    max_window_height: int = 950,
+    timeout_sec: float = 5.0,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Закрыть модалку кликом мыши по **[X]** в заголовке: те же кандидаты, что у `uia_modal_ok`,
+    координаты считаются от `rectangle()` окна и DPI (`GetDpiForWindow`).
+    """
+    rid = parse_request_id(client_request_id)
+    _require_win()
+    from pywinauto import Desktop, mouse
+
+    try:
+        pat = re.compile(title_regex, re.IGNORECASE) if (title_regex or "").strip() else _DEFAULT_MODAL_TITLE_RE
+    except re.error as e:
+        return err_json("ERR_VALIDATION", f"title_regex: {e}", request_id=rid)
+
+    d = Desktop(backend="uia")
+    deadline = time.monotonic() + max(0.5, float(timeout_sec))
+    last_err = ""
+    while time.monotonic() < deadline:
+        try:
+            for w in d.windows():
+                ok_c, title, cls, rw, rh = _modal_candidate_match(w, pat, max_window_width, max_window_height)
+                if not ok_c:
+                    continue
+                try:
+                    r = w.rectangle()
+                    hwnd = _hwnd_uia(w)
+                    scale = _dpi_scale(hwnd)
+                    cx, cy = _titlebar_close_screen_coords(r, scale)
+                    mouse.click(button="left", coords=(cx, cy))
+                    return ok_json(
+                        data={
+                            "closed": True,
+                            "via": "titlebar_close",
+                            "window_title": title,
+                            "class_name": cls,
+                            "size": {"w": rw, "h": rh},
+                            "click_screen": {"x": cx, "y": cy},
+                            "dpi_scale": scale,
+                        },
+                        message="uia_modal_titlebar_close",
+                        request_id=rid,
+                    )
+                except Exception as e2:
+                    last_err = str(e2)
+                    continue
+        except Exception as e:
+            last_err = str(e)
+        time.sleep(0.25)
+    return err_json(
+        "ERR_NOT_FOUND",
+        "Модальное окно для закрытия по крестику не найдено за timeout",
+        data={"last_error": last_err, "title_regex": title_regex or str(pat.pattern)},
+        request_id=rid,
+    )
+
+
+def mouse_click(
+    screen_x: int,
+    screen_y: int,
+    button: str = "left",
+    double: bool = False,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Клик мыши в **экранных** координатах (полезно, если агент вычислил позицию крестика по `capture_*`).
+    button: left | right | middle; double — двойной клик.
+    """
+    rid = parse_request_id(client_request_id)
+    _require_win()
+    from pywinauto import mouse
+
+    try:
+        x = int(screen_x)
+        y = int(screen_y)
+    except (TypeError, ValueError):
+        return err_json("ERR_VALIDATION", "screen_x и screen_y должны быть целыми", request_id=rid)
+    btn = (button or "left").lower().strip()
+    if btn not in ("left", "right", "middle"):
+        return err_json("ERR_VALIDATION", "button: left | right | middle", request_id=rid)
+    try:
+        if double:
+            mouse.double_click(button=btn, coords=(x, y))
+        else:
+            mouse.click(button=btn, coords=(x, y))
+        return ok_json(
+            data={"clicked": True, "screen_x": x, "screen_y": y, "button": btn, "double": bool(double)},
+            message="mouse_click",
+            request_id=rid,
+        )
     except Exception as e:
         return err_json("ERR_UIA", str(e), request_id=rid)
 

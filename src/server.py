@@ -36,6 +36,11 @@ _mcp_su = os.environ.get("MCP_ALLOW_SELF_UPDATE")
 if _mcp_su is None or str(_mcp_su).strip() == "":
     os.environ["MCP_ALLOW_SELF_UPDATE"] = "1"
 
+# После успешного server_update — перезапуск процесса (см. update.schedule_restart_after_update). Отключить: 0/false/no.
+_mcp_ra = os.environ.get("MCP_RESTART_AFTER_UPDATE")
+if _mcp_ra is None or str(_mcp_ra).strip() == "":
+    os.environ["MCP_RESTART_AFTER_UPDATE"] = "1"
+
 # launch_process: по умолчанию ВКЛ (часто в среде уже стоит MCP_ALLOW_LAUNCH=0 из старых скриптов).
 # Явный запрет только: MCP_BLOCK_LAUNCH=1 (или true / yes).
 if os.environ.get("MCP_BLOCK_LAUNCH", "").strip().lower() in ("1", "true", "yes"):
@@ -84,9 +89,13 @@ def server_update(mode: str = "pip", client_request_id: str | None = None) -> st
     Лог в data.log; при ошибке ok=false, code=ERR_UPDATE.
     """
     rid = parse_request_id(client_request_id)
-    ok, log = update_mod.run_self_update(mode)
+    ok, log, restart_scheduled = update_mod.run_self_update(mode)
     if ok:
-        return ok_json(data={"log": log, "mode": mode}, message="server_update", request_id=rid)
+        return ok_json(
+            data={"log": log, "mode": mode, "restart_scheduled": restart_scheduled},
+            message="server_update",
+            request_id=rid,
+        )
     code = "ERR_FORBIDDEN" if "отключ" in (log or "").lower() else "ERR_UPDATE"
     return err_json(code, log or "update failed", data={"log": log, "mode": mode}, request_id=rid)
 
@@ -144,6 +153,59 @@ def wait_for_element(
         0.5,
         client_request_id,
     )
+
+
+@mcp.tool()
+def uia_modal_ok(
+    title_regex: str | None = None,
+    button_titles: str = "OK,ОК",
+    max_window_width: int = 1400,
+    max_window_height: int = 950,
+    timeout_sec: float = 5.0,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Найти модальное окно (MessageBox / диалог поверх nanoCAD) по заголовку или классу #32770
+    и нажать первую найденную кнопку из button_titles. Не зависит от process_name главного окна.
+    """
+    return uia_tools.uia_modal_ok(
+        title_regex,
+        button_titles,
+        max_window_width,
+        max_window_height,
+        timeout_sec,
+        client_request_id,
+    )
+
+
+@mcp.tool()
+def uia_modal_titlebar_close(
+    title_regex: str | None = None,
+    max_window_width: int = 1400,
+    max_window_height: int = 950,
+    timeout_sec: float = 5.0,
+    client_request_id: str | None = None,
+) -> str:
+    """Закрыть модалку кликом по крестику [X] в заголовке (экранные координаты от UIA + DPI)."""
+    return uia_tools.uia_modal_titlebar_close(
+        title_regex,
+        max_window_width,
+        max_window_height,
+        timeout_sec,
+        client_request_id,
+    )
+
+
+@mcp.tool()
+def mouse_click(
+    screen_x: int,
+    screen_y: int,
+    button: str = "left",
+    double: bool = False,
+    client_request_id: str | None = None,
+) -> str:
+    """Клик мыши в экранных координатах (например крестик по расчёту от capture_monitor)."""
+    return uia_tools.mouse_click(screen_x, screen_y, button, double, client_request_id)
 
 
 @mcp.tool()

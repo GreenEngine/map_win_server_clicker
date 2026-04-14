@@ -52,6 +52,7 @@ pip install -r requirements.txt
 | `MCP_STATELESS_HTTP` | `1` / `true` — stateless-режим (масштабирование) |
 | `MCP_REPO_ROOT` | Явный корень git для **`server_update`**. Обычно **не нужен** при **`git clone`** [map_win_server_clicker](https://github.com/GreenEngine/map_win_server_clicker) (корень репо = папка сервера). См. [docs/GIT_SETUP.md](docs/GIT_SETUP.md). |
 | `MCP_ALLOW_SELF_UPDATE` | **`1`** / **`true`** — разрешить **`server_update`**. Если переменная **не задана или пустая**, при старте **`src\server.py`** подставляется **`1`**. Отключить: **`0`**, **`false`**, **`no`**. Скрипт **`run_local.ps1`** без **`-NoSelfUpdate`** ведёт себя так же. |
+| `MCP_RESTART_AFTER_UPDATE` | **`1`** / **`true`** (по умолчанию) — после успешного **`server_update`** запланировать **перезапуск** процесса MCP (`scripts/mcp_restart_after_update.py` ждёт завершения старого PID, затем снова запускает **`src/server.py`**). Отключить: **`0`**, **`false`**, **`no`** — тогда перезапуск только вручную. |
 | `MCP_ALLOW_LAUNCH` | Выставляется **`server.py`** при старте: **`1`**, если не задан **`MCP_BLOCK_LAUNCH=1`**. Внешнее **`MCP_ALLOW_LAUNCH=0`** из планировщика больше не блокирует запуск. Запрет: **`MCP_BLOCK_LAUNCH=1`**. |
 | `MCP_BLOCK_LAUNCH` | **`1`** / **`true`** — отключить **`launch_process`**. |
 | `MCP_NANOCAD_EXE` | Полный путь к **`nCAD.exe`**, если **`AUTO_NANOCAD`** не находит установку (нестандартная папка). |
@@ -76,7 +77,7 @@ $env:MCP_REPO_ROOT="D:\LEP"
 ### Обновление сервера
 
 1. **Код** — клонируй **[map_win_server_clicker](https://github.com/GreenEngine/map_win_server_clicker)** на Windows; **`server_update`** с **`full`** делает **`git pull` + pip**. Подробно: **[docs/GIT_SETUP.md](docs/GIT_SETUP.md)**. Копирование папки без **`.git`** — только ручные обновления.
-2. **Зависимости и git из агента:** при **`MCP_ALLOW_SELF_UPDATE=1`** вызовите инструмент **`server_update`**: `pip` (только pip), `git_pull` (pull + pip), `full` (то же, что `git_pull`). После смены **`.py` обязательно перезапустите** процесс `server.py`.
+2. **Зависимости и git из агента:** при **`MCP_ALLOW_SELF_UPDATE=1`** вызовите инструмент **`server_update`**: `pip` (только pip), `git_pull` (pull + pip), `full` (то же, что `git_pull`). При **`MCP_RESTART_AFTER_UPDATE=1`** (по умолчанию) процесс MCP **перезапустится сам** через ~2 с после ответа; в **`data.restart_scheduled`** будет **`true`**. Иначе перезапустите **`server.py`** вручную после смены **`.py`**.
 3. **Вручную на Windows:** `powershell -ExecutionPolicy Bypass -File scripts\update_server.ps1 -RepoRoot <корень LEP с .git>`.
 
 Эндпоинт MCP по умолчанию: **`http://<host>:<port>/mcp`** (см. `streamable_http_path` в FastMCP).
@@ -121,6 +122,7 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 2. **`agent_session`** — получить `protocol_version`, список инструментов, **`workflow`**, поле **`lep_ui_titles_hint`** (подсказки `title_contains` для LEP), снимок безопасных env.
 3. **`uia_list`** — построить карту UI; смотреть `data.truncated` (лимиты глубины/узлов).
 4. При необходимости **`wait_for_element`**, затем **`uia_click`**; при `ERR_NOT_FOUND` снова **`uia_list`**.
+4b. Если на **`capture_*`** видна **MessageBox** / **«Внимание»**, а **`uia_click`** по **OK** в **`nCAD.exe`** даёт **`ERR_NOT_FOUND`** — **`uia_modal_ok`**, при необходимости **`uia_modal_titlebar_close`** (крестик), иначе **`mouse_click`** по координатам крестика (расчёт от снимка / границ окна), затем снова пару снимков.
 5. Один и тот же **`client_request_id`** — во все инструменты одной задачи.
 6. **После каждого `send_keys` / `uia_click` / шага, меняющего экран:** сразу **`capture_window`** целевого окна с **`include_base64=true`** — агент **сам** смотрит **`data.png_base64`** и сверяет с ожидаемым результатом (не продолжать вслепую при расхождении).
 7. **После каждого снимка:** снова **`uia_list`**; для плагина LEP — дополнительно вызовы с **`title_contains`** из `lep_ui_titles_hint`, при **`truncated`** увеличить **`max_depth` / `max_nodes`** и повторить, пока дерево плагина не описано достаточно полно.
@@ -134,9 +136,12 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 | `health` | Пинг: `ok=true`, `data.status=alive` |
 | `agent_session` | Снимок для агента: workflow, контракт, env, список инструментов |
 | `server_info` | Версия Python, пути, git — в `data` |
-| `server_update` | `pip` / `git_pull` / `full`; лог в `data.log`. Нужен **`MCP_ALLOW_SELF_UPDATE=1`**; иначе `ERR_FORBIDDEN`. После обновления `.py` **перезапустите** процесс сервера. |
+| `server_update` | `pip` / `git_pull` / `full`; лог в `data.log`; при успехе **`data.restart_scheduled`** — запланирован автоперезапуск (если не **`MCP_RESTART_AFTER_UPDATE=0`**). Нужен **`MCP_ALLOW_SELF_UPDATE=1`**; иначе `ERR_FORBIDDEN`. |
 | `uia_list` | Плоский список элементов в `data.items`; `process_name` (exe) или `title_contains` |
 | `uia_click` | Клик по `automation_id` / `name` / `control_type`, опционально `nth` |
+| `uia_modal_ok` | Закрыть модалку **MessageBox** / `#32770`: обход top-level окон, клик **OK** / **ОК** (`title_regex`, `button_titles`, лимиты размера окна) |
+| `uia_modal_titlebar_close` | Закрыть ту же модалку **кликом по [X]** в caption: координаты от `rectangle()` окна и **DPI** (`GetDpiForWindow`) |
+| `mouse_click` | Клик мыши в **экранных** координатах `screen_x`, `screen_y` (`left`/`right`/`middle`, опционально `double`) — вручную по скрину |
 | `wait_for_element` | Ожидание появления элемента; таймаут → `ERR_TIMEOUT` |
 | `send_keys` | Ввод текста в окно (осторожно) |
 | `capture_window` | PNG окна: `data.path` на сервере; **`data.png_base64`** (+ MIME в `data.image_mime_type`) для клиента на Mac. `max_edge_px` уменьшает встроенное изображение при больших мониторах; файл на диске остаётся полным кадром. В `data.content_hint` — эвристика «кадр пустой/без видео». |

@@ -35,6 +35,18 @@ def agent_session_payload() -> dict[str, Any]:
             "name": "uia_click",
             "role": "клик по селектору; сразу после — capture_window + uia_list (см. workflow)",
         },
+        {
+            "name": "uia_modal_ok",
+            "role": "закрыть MessageBox/модалку (OK/ОК): обход top-level Desktop, не только nCAD.exe — после скрина с «Внимание»",
+        },
+        {
+            "name": "uia_modal_titlebar_close",
+            "role": "закрыть модалку кликом по [X] в заголовке (координаты от окна + DPI); если не сработало — mouse_click по координатам со скрина",
+        },
+        {
+            "name": "mouse_click",
+            "role": "клик мыши в экранных координатах (screen_x, screen_y) — крестик/точка, вычисленная агентом по capture_monitor/window",
+        },
         {"name": "wait_for_element", "role": "ожидание элемента; ERR_TIMEOUT если не дождались"},
         {
             "name": "send_keys",
@@ -59,6 +71,9 @@ def agent_session_payload() -> dict[str, Any]:
         "3) uia_list с process_name или title_contains — сохранить automation_id для цели.",
         "4) При необходимости wait_for_element перед кликом.",
         "5) uia_click; при ошибке ERR_NOT_FOUND повторить uia_list (UI мог смениться).",
+        "5b) Если на capture видна модалка (Внимание, Ошибка и т.д.), а uia_click по OK в nCAD.exe даёт ERR_NOT_FOUND — "
+        "сначала uia_modal_ok; при необходимости uia_modal_titlebar_close (клик по [X]); иначе по координатам крестика со скрина — "
+        "mouse_click(screen_x, screen_y); затем снова capture_window + capture_monitor.",
         "6) Передавать client_request_id (корреляция) во все инструменты — тот же id вернётся в request_id.",
         "7) ОБЯЗАТЕЛЬНО после каждого send_keys, uia_click или любого шага, меняющего экран: capture_window "
         "по целевому окну (обычно process_name=nCAD.exe или title_contains окна плагина), "
@@ -93,6 +108,7 @@ def agent_session_payload() -> dict[str, Any]:
             "MCP_STATELESS_HTTP": _env_bool("MCP_STATELESS_HTTP"),
             "MCP_REPO_ROOT": _safe_env("MCP_REPO_ROOT"),
             "MCP_ALLOW_SELF_UPDATE": _env_bool("MCP_ALLOW_SELF_UPDATE"),
+            "MCP_RESTART_AFTER_UPDATE": _env_bool("MCP_RESTART_AFTER_UPDATE"),
             "MCP_UPDATE_USE_PS1": _env_bool("MCP_UPDATE_USE_PS1"),
             "MCP_ALLOW_LAUNCH": _env_bool("MCP_ALLOW_LAUNCH"),
             "MCP_BLOCK_LAUNCH": _env_bool("MCP_BLOCK_LAUNCH"),

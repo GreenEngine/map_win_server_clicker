@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -57,24 +59,76 @@ def server_version_dict() -> dict[str, Any]:
     }
 
 
-def run_self_update(mode: str = "pip") -> tuple[bool, str]:
+def _restart_after_update_enabled() -> bool:
+    """По умолчанию после успешного обновления планируется перезапуск процесса MCP."""
+    v = os.environ.get("MCP_RESTART_AFTER_UPDATE", "").strip().lower()
+    if v in ("0", "false", "no"):
+        return False
+    return True
+
+
+def schedule_restart_after_update() -> None:
+    """
+    Через ~1.5 с после ответа клиенту: старт `scripts/mcp_restart_after_update.py`, затем os._exit(0).
+    Новый процесс ждёт освобождения порта (завершения старого PID), затем запускает `src/server.py`.
+    """
+    if not _restart_after_update_enabled():
+        return
+    srv = _server_root()
+    helper = srv / "scripts" / "mcp_restart_after_update.py"
+    server_py = srv / "src" / "server.py"
+    if not helper.is_file() or not server_py.is_file():
+        return
+
+    python_exe = sys.executable
+    pid = os.getpid()
+    cwd = str(srv)
+
+    def _restart() -> None:
+        try:
+            time.sleep(2.0)
+            cf = 0
+            if sys.platform == "win32":
+                cf = int(getattr(subprocess, "DETACHED_PROCESS", 0x00000008))
+                cf |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
+            subprocess.Popen(
+                [python_exe, str(helper), str(pid), python_exe, str(server_py), cwd],
+                cwd=cwd,
+                creationflags=cf if sys.platform == "win32" else 0,
+                start_new_session=sys.platform != "win32",
+                close_fds=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(0.5)
+            os._exit(0)
+        except Exception:
+            pass
+
+    threading.Thread(target=_restart, daemon=True).start()
+
+
+def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
     """
     Returns:
-        (success, log_text)
+        (success, log_text, restart_scheduled)
     """
     if os.environ.get("MCP_ALLOW_SELF_UPDATE", "").strip() not in ("1", "true", "True", "yes", "YES"):
         return (
             False,
             "Self-update отключён. Установите MCP_ALLOW_SELF_UPDATE=1 и перезапустите процесс MCP.",
+            False,
         )
 
     root = _repo_root()
     srv = _server_root()
     req = srv / "requirements.txt"
     if not req.is_file():
-        return False, f"Не найден {req}"
+        return False, f"Не найден {req}", False
 
     lines: list[str] = []
+    restart_scheduled = False
 
     def run(cmd: list[str], cwd: Path | None = None) -> None:
         lines.append(f"$ {' '.join(cmd)} (cwd={cwd or Path.cwd()})")
@@ -113,10 +167,14 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str]:
                 if mode_l == "pip":
                     cmd.append("-SkipGit")
                 run(cmd, cwd=_server_root())
-                lines.append(
-                    "Скрипт update_server.ps1 выполнен. Перезапустите процесс MCP, чтобы подтянуть новые .py."
-                )
-                return True, "\n".join(lines)
+                lines.append("Скрипт update_server.ps1 выполнен.")
+                if _restart_after_update_enabled():
+                    schedule_restart_after_update()
+                    restart_scheduled = True
+                    lines.append("Перезапуск процесса MCP запланирован (через ~2 с).")
+                else:
+                    lines.append("Перезапустите процесс MCP вручную, чтобы подтянуть новые .py.")
+                return True, "\n".join(lines), restart_scheduled
             lines.append(f"Нет скрипта {ps1}, выполняем встроенное обновление…")
 
         if mode_l in ("git_pull", "full"):
@@ -129,9 +187,15 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str]:
         if mode_l in ("pip", "full", "git_pull"):
             run([sys.executable, "-m", "pip", "install", "-r", str(req)])
 
-        lines.append(
-            "Готово. Перезапустите процесс MCP на Windows, чтобы подтянуть новый код, если менялись .py файлы."
-        )
-        return True, "\n".join(lines)
+        lines.append("Готово.")
+        if _restart_after_update_enabled():
+            schedule_restart_after_update()
+            restart_scheduled = True
+            lines.append("Перезапуск процесса MCP запланирован (через ~2 с).")
+        else:
+            lines.append(
+                "Перезапустите процесс MCP на Windows вручную, чтобы подтянуть новый код, если менялись .py файлы."
+            )
+        return True, "\n".join(lines), restart_scheduled
     except Exception as e:
-        return False, "\n".join(lines) + f"\nERROR: {e!s}"
+        return False, "\n".join(lines) + f"\nERROR: {e!s}", False
