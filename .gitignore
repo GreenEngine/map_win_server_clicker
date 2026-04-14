@@ -1,0 +1,6 @@
+.venv/
+.pip-cache/
+.tmp/
+python-embed/
+__pycache__/
+*.py[cod]

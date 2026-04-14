@@ -1,0 +1,7 @@
+# Windows Server: python 3.10+ recommended
+mcp>=1.8.0
+pywinauto>=0.6.8
+Pillow>=10.0.0
+mss>=9.0.0
+uvicorn>=0.30.0
+starlette>=0.37.0
