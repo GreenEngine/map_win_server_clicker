@@ -4,6 +4,40 @@
 
 Инструмент **`server_update`** с **`full`** / **`git_pull`** делает **`git pull`** в этом каталоге (если настроен **`origin`**) и **`pip install`** в той же папке.
 
+## Сначала создать репозиторий на GitHub (публичный)
+
+Пока репозитория **нет**, **`git push` по SSH не пройдёт** (`Repository not found`). Нужен **пустой публичный** репозиторий **`GreenEngine/lep-windows-mcp-server`**.
+
+### Через сайт (проще всего)
+
+1. Открой: **[github.com/new](https://github.com/new)**  
+2. **Repository name:** `lep-windows-mcp-server`  
+3. Видимость: **Public**  
+4. **НЕ** включай «Add a README» (репозиторий должен быть пустым).  
+5. **Create repository**
+
+После этого в каталоге с кодом:
+
+```bash
+cd /path/to/windows-mcp-server
+git push -u origin main
+```
+
+### Через API (нужен Personal Access Token)
+
+Создай токен: **GitHub → Settings → Developer settings → Personal access tokens** — классический токен с правом **`repo`**.
+
+```bash
+export GITHUB_TOKEN=ghp_ВАШ_ТОКЕН
+curl -sS -X POST \
+  -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+  -H "Accept: application/vnd.github+json" \
+  https://api.github.com/user/repos \
+  -d '{"name":"lep-windows-mcp-server","private":false,"description":"LEP Windows MCP server"}'
+```
+
+Ответ **201** — репозиторий создан; затем **`git push -u origin main`**.
+
 ## Первый push (Mac / разработка)
 
 В каталоге сервера уже настроен **`origin`** по SSH:
