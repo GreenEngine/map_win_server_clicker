@@ -23,8 +23,11 @@ if _SERVER_DIR not in sys.path:
 from mcp.server.fastmcp import FastMCP
 
 from src import uia_tools
+from src import nanocad_bootstrap
 from src import session as session_mod
 from src import update as update_mod
+from src import action_json_log
+from src.action_json_log import tool_log_decorator
 from src.protocol import err_json, ok_json, parse_request_id
 
 _HOST = os.environ.get("MCP_HOST", "0.0.0.0")
@@ -58,6 +61,7 @@ mcp = FastMCP(
 
 
 @mcp.tool()
+@tool_log_decorator("health")
 def health(client_request_id: str | None = None) -> str:
     """Проверка связи: всегда ok=true при живом процессе. Вызывайте первым."""
     rid = parse_request_id(client_request_id)
@@ -69,6 +73,7 @@ def health(client_request_id: str | None = None) -> str:
 
 
 @mcp.tool()
+@tool_log_decorator("agent_session")
 def agent_session(client_request_id: str | None = None) -> str:
     """Снимок для агента: protocol_version, список инструментов, workflow, безопасные env, контракт ответов."""
     rid = parse_request_id(client_request_id)
@@ -76,6 +81,7 @@ def agent_session(client_request_id: str | None = None) -> str:
 
 
 @mcp.tool()
+@tool_log_decorator("server_info")
 def server_info(client_request_id: str | None = None) -> str:
     """Версия Python, пути, git — внутри data (плоская структура)."""
     rid = parse_request_id(client_request_id)
@@ -83,6 +89,7 @@ def server_info(client_request_id: str | None = None) -> str:
 
 
 @mcp.tool()
+@tool_log_decorator("server_update")
 def server_update(mode: str = "pip", client_request_id: str | None = None) -> str:
     """
     Обновление: pip / git_pull / full. Требует MCP_ALLOW_SELF_UPDATE=1.
@@ -101,6 +108,7 @@ def server_update(mode: str = "pip", client_request_id: str | None = None) -> st
 
 
 @mcp.tool()
+@tool_log_decorator("uia_list")
 def uia_list(
     process_name: str | None = None,
     title_contains: str | None = None,
@@ -113,6 +121,7 @@ def uia_list(
 
 
 @mcp.tool()
+@tool_log_decorator("uia_list_subtree")
 def uia_list_subtree(
     process_name: str | None = None,
     title_contains: str | None = None,
@@ -138,6 +147,7 @@ def uia_list_subtree(
 
 
 @mcp.tool()
+@tool_log_decorator("uia_click")
 def uia_click(
     process_name: str | None = None,
     title_contains: str | None = None,
@@ -160,6 +170,7 @@ def uia_click(
 
 
 @mcp.tool()
+@tool_log_decorator("wait_for_element")
 def wait_for_element(
     process_name: str | None = None,
     title_contains: str | None = None,
@@ -181,6 +192,7 @@ def wait_for_element(
 
 
 @mcp.tool()
+@tool_log_decorator("uia_modal_ok")
 def uia_modal_ok(
     title_regex: str | None = None,
     button_titles: str = "OK,ОК",
@@ -207,6 +219,7 @@ def uia_modal_ok(
 
 
 @mcp.tool()
+@tool_log_decorator("uia_modal_titlebar_close")
 def uia_modal_titlebar_close(
     title_regex: str | None = None,
     max_window_width: int = 1400,
@@ -225,6 +238,7 @@ def uia_modal_titlebar_close(
 
 
 @mcp.tool()
+@tool_log_decorator("mouse_click")
 def mouse_click(
     screen_x: int,
     screen_y: int,
@@ -237,6 +251,7 @@ def mouse_click(
 
 
 @mcp.tool()
+@tool_log_decorator("mouse_click_window")
 def mouse_click_window(
     client_x: int,
     client_y: int,
@@ -259,6 +274,7 @@ def mouse_click_window(
 
 
 @mcp.tool()
+@tool_log_decorator("mouse_move")
 def mouse_move(
     screen_x: int,
     screen_y: int,
@@ -269,6 +285,7 @@ def mouse_move(
 
 
 @mcp.tool()
+@tool_log_decorator("mouse_move_smooth")
 def mouse_move_smooth(
     screen_x: int,
     screen_y: int,
@@ -284,6 +301,7 @@ def mouse_move_smooth(
 
 
 @mcp.tool()
+@tool_log_decorator("send_keys")
 def send_keys(
     process_name: str | None = None,
     title_contains: str | None = None,
@@ -296,6 +314,7 @@ def send_keys(
 
 
 @mcp.tool()
+@tool_log_decorator("capture_window")
 def capture_window(
     process_name: str | None = None,
     title_contains: str | None = None,
@@ -320,6 +339,7 @@ def capture_window(
 
 
 @mcp.tool()
+@tool_log_decorator("launch_process")
 def launch_process(
     executable: str,
     arguments: str = "",
@@ -335,6 +355,73 @@ def launch_process(
 
 
 @mcp.tool()
+def action_json_log_recent(max_lines: int = 40, client_request_id: str | None = None) -> str:
+    """
+    Последние записи из JSONL-лога успешных действий (см. MCP_ACTION_JSONL в README).
+    Если лог выключен — data.enabled=false. Дедупликация сценария: смотреть action_signature / replay_hint.
+    """
+    rid = parse_request_id(client_request_id)
+    ok, msg, items = action_json_log.read_recent_entries(max_lines)
+    if not ok and msg == "MCP_ACTION_JSONL не задан":
+        return ok_json(
+            data={"enabled": False, "entries": [], "hint": msg},
+            message="action_json_log_recent",
+            request_id=rid,
+        )
+    if not ok:
+        return err_json("ERR_IO", msg, request_id=rid)
+    log_path = (os.environ.get("MCP_ACTION_JSONL") or "").strip()
+    return ok_json(
+        data={
+            "enabled": True,
+            "path": log_path,
+            "filter": (os.environ.get("MCP_ACTION_JSONL_FILTER") or "lep_only").strip(),
+            "entries": items,
+            "count": len(items),
+        },
+        message="action_json_log_recent",
+        request_id=rid,
+    )
+
+
+@mcp.tool()
+@tool_log_decorator("nanocad_lep_prepare")
+def nanocad_lep_prepare(
+    skip_launch_if_running: bool = True,
+    launch_arguments: str = "",
+    launch_wait_timeout_sec: float = 90.0,
+    modal_rounds: int = 14,
+    modal_timeout_sec: float = 3.5,
+    modal_button_titles: str = "OK,ОК,Закрыть,Close,Cancel,Отмена,Пропустить,Skip",
+    after_modal_titlebar_rounds: int = 2,
+    lep_command: str | None = None,
+    wait_palette_timeout_sec: float = 55.0,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Один вызов: nanoCAD (если ещё не в UIA — launch_process AUTO_NANOCAD), закрытие типовых модалок,
+    фокус командной строки (1011), команда LEP (+ Enter), ожидание lep_palette_root.
+    Логика вынесена в `src/nanocad_bootstrap.py`. Нужен MCP_ALLOW_LAUNCH=1 для старта процесса.
+    skip_launch_if_running=false — принудительный launch даже при уже запущенном nCAD (осторожно: второй экземпляр).
+    lep_command: по умолчанию из MCP_LEP_COMMAND или «LEP».
+    """
+    return nanocad_bootstrap.nanocad_lep_prepare(
+        skip_launch_if_running=skip_launch_if_running,
+        launch_arguments=launch_arguments,
+        launch_wait_timeout_sec=launch_wait_timeout_sec,
+        modal_rounds=modal_rounds,
+        modal_timeout_sec=modal_timeout_sec,
+        modal_button_titles=modal_button_titles,
+        after_modal_titlebar_rounds=after_modal_titlebar_rounds,
+        lep_command=lep_command,
+        wait_palette_timeout_sec=wait_palette_timeout_sec,
+        wait_palette_poll_sec=0.45,
+        client_request_id=client_request_id,
+    )
+
+
+@mcp.tool()
+@tool_log_decorator("capture_monitor")
 def capture_monitor(
     monitor_index: int = 1,
     out_path: str | None = None,

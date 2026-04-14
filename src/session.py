@@ -80,10 +80,20 @@ def agent_session_payload() -> dict[str, Any]:
             "name": "launch_process",
             "role": "Запуск .exe; отключить: MCP_BLOCK_LAUNCH=1. executable=AUTO_NANOCAD — поиск nCAD.exe",
         },
+        {
+            "name": "nanocad_lep_prepare",
+            "role": "Один вызов: nCAD в UIA → launch при необходимости → модалки → командная строка 1011 → LEP (MCP_LEP_COMMAND) → wait lep_palette_root; data.steps",
+        },
+        {
+            "name": "action_json_log_recent",
+            "role": "Хвост JSONL-лога успешных шагов (MCP_ACTION_JSONL): entries[].action_signature / replay_hint — чтобы не дублировать сценарий",
+        },
     ]
     workflow = [
         "1) Вызвать health — убедиться, что JSON парсится и ok=true.",
         "2) Вызвать agent_session — прочитать protocol_version и рекомендуемые инструменты.",
+        "2a) С нуля или после перезагрузки ВМ: nanocad_lep_prepare (journal в data.steps) — затем capture_window + capture_monitor для визуальной проверки палитры.",
+        "2c) Если на сервере задан MCP_ACTION_JSONL — при успешных шагах (фильтр lep_only по умолчанию) дописываются JSONL-строки; перед длинным сценарием вызвать action_json_log_recent и пропускать уже имеющиеся action_signature.",
         "2b) LEP: перед кликами по вкладкам палитры — capture_window + capture_monitor (include_base64=true) и проверить на картинке, "
         "что панель LEP слева открыта (заголовок LEP, вкладки). Если палитры нет — клик по командной строке automation_id 1011, "
         "send_keys LEP + with_enter, снова пара снимков. Не тестировать вкладки «вслепую», если на скрине нет палитры.",
@@ -132,6 +142,9 @@ def agent_session_payload() -> dict[str, Any]:
             "MCP_ALLOW_LAUNCH": _env_bool("MCP_ALLOW_LAUNCH"),
             "MCP_BLOCK_LAUNCH": _env_bool("MCP_BLOCK_LAUNCH"),
             "MCP_NANOCAD_EXE": _safe_env("MCP_NANOCAD_EXE"),
+            "MCP_LEP_COMMAND": _safe_env("MCP_LEP_COMMAND"),
+            "MCP_ACTION_JSONL": _safe_env("MCP_ACTION_JSONL"),
+            "MCP_ACTION_JSONL_FILTER": _safe_env("MCP_ACTION_JSONL_FILTER"),
             "cwd": os.getcwd(),
             "argv0": sys.argv[0] if sys.argv else "",
         },
