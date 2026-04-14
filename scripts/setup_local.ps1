@@ -1,7 +1,7 @@
-# Установка зависимостей в каталог проекта: .venv, кэш pip (.pip-cache), временные файлы (.tmp).
-# Опционально скачивает embeddable Python в .\python-embed\ (без winget, без админа).
+# Install deps into project: .venv, .pip-cache, .tmp. Optional: embeddable Python in .\python-embed\
+# (ASCII messages: compatible with Windows PowerShell 5.x without UTF-8 BOM.)
 #
-# Примеры:
+# Examples:
 #   powershell -ExecutionPolicy Bypass -File scripts\setup_local.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\setup_local.ps1 -DownloadEmbed
 #   powershell -ExecutionPolicy Bypass -File scripts\setup_local.ps1 -PythonExe "D:\Python312\python.exe"
@@ -32,7 +32,7 @@ function Install-EmbedPython {
     $url = "https://www.python.org/ftp/python/$Ver/$zipName"
     $zipPath = Join-Path $tmpDir $zipName
 
-    Write-Host "Скачивание embeddable Python $Ver в $embedRoot ..."
+    Write-Host "Downloading embeddable Python $Ver to $embedRoot ..."
     if (Test-Path $embedRoot) {
         Remove-Item -Recurse -Force $embedRoot
     }
@@ -44,7 +44,7 @@ function Install-EmbedPython {
 
     $pth = Get-ChildItem -Path $embedRoot -Filter "python*._pth" | Select-Object -First 1
     if (-not $pth) {
-        throw "Не найден python*._pth в $embedRoot"
+        throw "python*._pth not found under $embedRoot"
     }
     $txt = Get-Content -Raw -Path $pth.FullName
     $txt = $txt -replace "#\s*import site", "import site"
@@ -60,7 +60,7 @@ function Install-EmbedPython {
         Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $gp -UseBasicParsing
         & $py $gp --no-warn-script-location
     }
-    Write-Host "Embeddable готов: $py"
+    Write-Host "Embeddable ready: $py"
 }
 
 if ($DownloadEmbed) {
@@ -82,21 +82,21 @@ if (-not $PythonExe) {
 
 if (-not $PythonExe -or -not (Test-Path $PythonExe)) {
     throw @'
-Python не найден.
-  Вариант 1: powershell -ExecutionPolicy Bypass -File scripts\setup_local.ps1 -DownloadEmbed
-  Вариант 2: -PythonExe "полный\путь\python.exe"
-  Вариант 3: установите Python и задайте переменную окружения MCP_PYTHON
+Python not found.
+  Option 1: powershell -ExecutionPolicy Bypass -File scripts\setup_local.ps1 -DownloadEmbed
+  Option 2: -PythonExe "C:\full\path\python.exe"
+  Option 3: install Python and set env MCP_PYTHON
 '@
 }
 
-Write-Host "Используется: $PythonExe"
+Write-Host "Using: $PythonExe"
 Write-Host "PIP_CACHE_DIR=$pipCache"
 Write-Host "TEMP/TMP=$tmpDir"
 
 $venvPath = Join-Path $ProjectRoot ".venv"
 $venvPython = Join-Path $venvPath "Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
-    Write-Host "Создание venv: $venvPath"
+    Write-Host "Creating venv: $venvPath"
     & $PythonExe -m venv $venvPath
 }
 
@@ -105,5 +105,5 @@ $req = Join-Path $ProjectRoot "requirements.txt"
 & $venvPython -m pip install -r $req
 
 Write-Host ""
-Write-Host "Готово. Запуск сервера: .\scripts\run_local.ps1"
-Write-Host "Или: .\.venv\Scripts\python.exe src\server.py"
+Write-Host "Done. Start server: .\scripts\run_local.ps1"
+Write-Host "Or: .\.venv\Scripts\python.exe src\server.py"

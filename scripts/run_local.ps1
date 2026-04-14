@@ -1,14 +1,13 @@
-# Запуск MCP из локального .venv; кэш pip и TEMP — в папке проекта (как в setup_local.ps1).
+# Run MCP from local .venv; pip cache and TEMP in project folder (same as setup_local.ps1).
+# (ASCII messages: compatible with Windows PowerShell 5.x without UTF-8 BOM.)
 #
-# Пример:
+# Example:
 #   powershell -ExecutionPolicy Bypass -File scripts\run_local.ps1
-# Без self-update (инструмент server_update в MCP будет отключён):
+# Disable self-update (server_update tool will be forbidden):
 #   powershell -ExecutionPolicy Bypass -File scripts\run_local.ps1 -NoSelfUpdate
 
 param(
-    # По умолчанию разрешаем server_update из MCP, если переменная ещё не задана снаружи.
     [switch]$NoSelfUpdate = $false,
-    # Разрешить инструмент launch_process (запуск .exe с машины через MCP).
     [switch]$AllowLaunch = $false
 )
 
@@ -34,7 +33,7 @@ $env:TEMP = $tmpDir
 
 $venvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $venvPython)) {
-    throw "Нет .venv. Сначала: powershell -ExecutionPolicy Bypass -File scripts\setup_local.ps1"
+    throw "No .venv found. Run first: powershell -ExecutionPolicy Bypass -File scripts\setup_local.ps1"
 }
 
 Push-Location $ProjectRoot
