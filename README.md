@@ -49,7 +49,7 @@ pip install -r requirements.txt
 | `MCP_HOST` | По умолчанию `0.0.0.0` |
 | `MCP_PORT` | По умолчанию **`8765`**. Другой порт (например **`4040`**): перед запуском `set MCP_PORT=4040` / `$env:MCP_PORT="4040"`; в Cursor URL станет `http://<хост>:4040/mcp`. |
 | `MCP_STATELESS_HTTP` | `1` / `true` — stateless-режим (масштабирование) |
-| `MCP_REPO_ROOT` | Явный корень git для **`server_update`**. Обычно **не нужен**: репозиторий git заведён **внутри папки `windows-mcp-server`** (см. [docs/GIT_SETUP.md](docs/GIT_SETUP.md)). Задавайте только если **`.git`** лежит **выше** (монорепо). |
+| `MCP_REPO_ROOT` | Явный корень git для **`server_update`**. Обычно **не нужен** при **`git clone`** [map_win_server_clicker](https://github.com/GreenEngine/map_win_server_clicker) (корень репо = папка сервера). См. [docs/GIT_SETUP.md](docs/GIT_SETUP.md). |
 | `MCP_ALLOW_SELF_UPDATE` | **`1`** / **`true`** — разрешить **`server_update`**. Если переменная **не задана или пустая**, при старте **`src\server.py`** подставляется **`1`**. Отключить: **`0`**, **`false`**, **`no`**. Скрипт **`run_local.ps1`** без **`-NoSelfUpdate`** ведёт себя так же. |
 | `MCP_ALLOW_LAUNCH` | Выставляется **`server.py`** при старте: **`1`**, если не задан **`MCP_BLOCK_LAUNCH=1`**. Внешнее **`MCP_ALLOW_LAUNCH=0`** из планировщика больше не блокирует запуск. Запрет: **`MCP_BLOCK_LAUNCH=1`**. |
 | `MCP_BLOCK_LAUNCH` | **`1`** / **`true`** — отключить **`launch_process`**. |
@@ -74,7 +74,7 @@ $env:MCP_REPO_ROOT="D:\LEP"
 
 ### Обновление сервера
 
-1. **Код** — в каталоге сервера. Рекомендуется отдельный git-репозиторий **только для `windows-mcp-server`**: **`git clone …\windows-mcp-server`**, затем **`server_update`** `full` тянет коммиты. Подробно: **[docs/GIT_SETUP.md](docs/GIT_SETUP.md)**. Альтернатива — копирование папки с Mac без git (тогда обновления только вручную).
+1. **Код** — клонируй **[map_win_server_clicker](https://github.com/GreenEngine/map_win_server_clicker)** на Windows; **`server_update`** с **`full`** делает **`git pull` + pip**. Подробно: **[docs/GIT_SETUP.md](docs/GIT_SETUP.md)**. Копирование папки без **`.git`** — только ручные обновления.
 2. **Зависимости и git из агента:** при **`MCP_ALLOW_SELF_UPDATE=1`** вызовите инструмент **`server_update`**: `pip` (только pip), `git_pull` (pull + pip), `full` (то же, что `git_pull`). После смены **`.py` обязательно перезапустите** процесс `server.py`.
 3. **Вручную на Windows:** `powershell -ExecutionPolicy Bypass -File scripts\update_server.ps1 -RepoRoot <корень LEP с .git>`.
 

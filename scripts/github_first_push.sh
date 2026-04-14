@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 OWNER="${GITHUB_OWNER:-GreenEngine}"
-REPO="${GITHUB_REPO:-lep-windows-mcp-server}"
+REPO="${GITHUB_REPO:-map_win_server_clicker}"
 TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
 if ! git remote get-url origin >/dev/null 2>&1; then
@@ -44,4 +44,4 @@ fi
 
 echo "git push -u origin main ..."
 git push -u origin main
-echo "Готово: https://github.com/${OWNER}/${REPO}"
+echo "Готово: https://github.com/${OWNER}/${REPO} (актуальный репозиторий MCP)"
