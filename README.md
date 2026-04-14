@@ -45,7 +45,7 @@ pip install -r requirements.txt
 | Переменная | Описание |
 |------------|----------|
 | `MCP_HOST` | По умолчанию `0.0.0.0` |
-| `MCP_PORT` | По умолчанию `8765` |
+| `MCP_PORT` | По умолчанию **`8765`**. Другой порт (например **`4040`**): перед запуском `set MCP_PORT=4040` / `$env:MCP_PORT="4040"`; в Cursor URL станет `http://<хост>:4040/mcp`. |
 | `MCP_STATELESS_HTTP` | `1` / `true` — stateless-режим (масштабирование) |
 | `MCP_REPO_ROOT` | Явный корень git для **`server_update`**. Обычно **не нужен**: репозиторий git заведён **внутри папки `windows-mcp-server`** (см. [docs/GIT_SETUP.md](docs/GIT_SETUP.md)). Задавайте только если **`.git`** лежит **выше** (монорепо). |
 | `MCP_ALLOW_SELF_UPDATE` | **`1`** / **`true`** — разрешить **`server_update`**. Если переменная **не задана или пустая**, при старте **`src\server.py`** подставляется **`1`**. Отключить: **`0`**, **`false`**, **`no`**. Скрипт **`run_local.ps1`** без **`-NoSelfUpdate`** ведёт себя так же. |
