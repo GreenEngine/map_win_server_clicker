@@ -6,13 +6,32 @@
 
 ## Первый push (Mac / разработка)
 
+В каталоге сервера уже настроен **`origin`** по SSH:
+
+`git@github.com:GreenEngine/lep-windows-mcp-server.git`
+
+**Вариант 1** — скрипт (создаёт репозиторий через API, если задан **`GITHUB_TOKEN`** с правом **`repo`**, или репозиторий уже есть):
+
 ```bash
-cd /path/to/LEP/windows-mcp-server
-git remote add origin https://github.com/<АККАУНТ>/<РЕПО-mcp>.git
+cd /path/to/windows-mcp-server
+./scripts/github_first_push.sh
+```
+
+**Вариант 2** — вручную: на GitHub создайте **пустой** репозиторий **`GreenEngine/lep-windows-mcp-server`** (без README), затем:
+
+```bash
+cd /path/to/windows-mcp-server
 git push -u origin main
 ```
 
-Создайте **пустой** репозиторий на GitHub/GitLab, затем команды выше.
+**Вариант 3** — один раз войти в GitHub CLI и создать репозиторий из папки:
+
+```bash
+gh auth login
+gh repo create GreenEngine/lep-windows-mcp-server --public --source=. --remote=origin --push
+```
+
+(если **`origin`** уже есть, сначала `git remote remove origin` или укажите другое имя remote.)
 
 ## Клон на Windows (сервер)
 
