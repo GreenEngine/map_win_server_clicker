@@ -1,5 +1,7 @@
 # LEP Windows MCP Server
 
+Репозиторий на GitHub: **[GreenEngine/map_win_server_clicker](https://github.com/GreenEngine/map_win_server_clicker)**.
+
 MCP-сервер для **Windows Server / Windows 10+**: **Streamable HTTP**, инструменты **UI Automation** (pywinauto) для NanoCAD/плагина и других оконных приложений, плюс **`server_update`** — обновление кода/зависимостей на сервере по запросу агента (с флагом безопасности).
 
 ## Требования
