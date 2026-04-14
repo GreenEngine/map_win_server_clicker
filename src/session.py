@@ -94,6 +94,7 @@ def agent_session_payload() -> dict[str, Any]:
         "2) Вызвать agent_session — прочитать protocol_version и рекомендуемые инструменты.",
         "2a) С нуля или после перезагрузки ВМ: nanocad_lep_prepare (journal в data.steps) — затем capture_window + capture_monitor для визуальной проверки палитры.",
         "2c) Если на сервере задан MCP_ACTION_JSONL — при успешных шагах (фильтр lep_only по умолчанию) дописываются JSONL-строки; перед длинным сценарием вызвать action_json_log_recent и пропускать уже имеющиеся action_signature.",
+        "2d) Декларативные сценарии: каталог scenarios/ + scripts/run_lep_scenario.py — промпт для агента; capture_window/capture_monitor: filename_suffix или out_path (MCP_CAPTURE_DIR).",
         "2b) LEP: перед кликами по вкладкам палитры — capture_window + capture_monitor (include_base64=true) и проверить на картинке, "
         "что панель LEP слева открыта (заголовок LEP, вкладки). Если палитры нет — клик по командной строке automation_id 1011, "
         "send_keys LEP + with_enter, снова пара снимков. Не тестировать вкладки «вслепую», если на скрине нет палитры.",
@@ -145,6 +146,7 @@ def agent_session_payload() -> dict[str, Any]:
             "MCP_LEP_COMMAND": _safe_env("MCP_LEP_COMMAND"),
             "MCP_ACTION_JSONL": _safe_env("MCP_ACTION_JSONL"),
             "MCP_ACTION_JSONL_FILTER": _safe_env("MCP_ACTION_JSONL_FILTER"),
+            "MCP_CAPTURE_DIR": _safe_env("MCP_CAPTURE_DIR"),
             "cwd": os.getcwd(),
             "argv0": sys.argv[0] if sys.argv else "",
         },

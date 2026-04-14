@@ -1272,6 +1272,48 @@ def _image_content_hint(img: Any) -> str:
         return "unknown"
 
 
+def _filename_slug_segment(raw: str, max_len: int = 96) -> str:
+    """Фрагмент имени PNG: латиница, цифры, ._- ; пробелы → _."""
+    s = (raw or "").strip().lower()
+    out: list[str] = []
+    prev_us = False
+    for ch in s:
+        if ord(ch) < 128 and (ch.isalnum() or ch in "-_."):
+            out.append(ch)
+            prev_us = False
+        elif ch.isspace():
+            if not prev_us:
+                out.append("_")
+                prev_us = True
+    slug = "".join(out).strip("._") or "snap"
+    return slug[:max_len]
+
+
+def _resolve_png_out_path(
+    out_path: str | None,
+    filename_suffix: str | None,
+    *,
+    default_prefix: str,
+) -> str:
+    """Полный путь для PNG: явный out_path или каталог MCP_CAPTURE_DIR/temp + префикс + slug + uuid."""
+    import os
+    import tempfile
+    import uuid
+
+    if (out_path or "").strip():
+        return str(out_path).strip()
+    capture_dir = (os.environ.get("MCP_CAPTURE_DIR") or "").strip()
+    if not capture_dir:
+        capture_dir = tempfile.gettempdir()
+    os.makedirs(capture_dir, exist_ok=True)
+    slug = _filename_slug_segment(filename_suffix) if (filename_suffix or "").strip() else ""
+    if slug:
+        fname = f"{default_prefix}_{slug}_{uuid.uuid4().hex[:8]}.png"
+    else:
+        fname = f"{default_prefix}_{uuid.uuid4().hex}.png"
+    return os.path.join(capture_dir, fname)
+
+
 def _save_grab_png(
     shot: Any,
     out_path: str,
@@ -1323,6 +1365,7 @@ def _save_grab_png(
 def capture_monitor(
     monitor_index: int = 1,
     out_path: str | None = None,
+    filename_suffix: str | None = None,
     include_base64: bool = True,
     max_edge_px: int = 2400,
     client_request_id: str | None = None,
@@ -1330,20 +1373,18 @@ def capture_monitor(
     """
     Снимок целого монитора через MSS (не только окна процесса).
     monitor_index: 0 — виртуальный «все мониторы», 1 — основной, далее — дополнительные.
+    filename_suffix: если out_path не задан — фрагмент имени файла (латиница); каталог — MCP_CAPTURE_DIR или temp.
     После отключения RDP без виртуального дисплея кадр часто чёрный — смотрите data.content_hint и README (RDS).
     """
     rid = parse_request_id(client_request_id)
     try:
         if sys.platform != "win32":
             return err_json("ERR_PLATFORM", "capture_monitor только на Windows", request_id=rid)
-        import os
-        import tempfile
-        import uuid
-
         import mss
 
-        if not out_path:
-            out_path = os.path.join(tempfile.gettempdir(), f"lep_mcp_mon_{uuid.uuid4().hex}.png")
+        explicit_mon = (filename_suffix or "").strip()
+        slug_used = _filename_slug_segment(explicit_mon) if explicit_mon else None
+        out_path = _resolve_png_out_path(out_path, explicit_mon or None, default_prefix="lep_mcp_mon")
         with mss.mss() as sct:
             monitors = sct.monitors
             n_mon = len(monitors)
@@ -1371,6 +1412,8 @@ def capture_monitor(
                 "bbox": bbox,
                 "monitor_index": monitor_index,
                 "monitors_count": n_mon,
+                "filename_suffix": explicit_mon or None,
+                "filename_slug_used": slug_used,
                 "capture_message": "capture_monitor",
             },
             rid,
@@ -1385,6 +1428,7 @@ def capture_window(
     process_name: str | None = None,
     title_contains: str | None = None,
     out_path: str | None = None,
+    filename_suffix: str | None = None,
     include_base64: bool = True,
     max_edge_px: int = 2400,
     client_request_id: str | None = None,
@@ -1393,17 +1437,25 @@ def capture_window(
     try:
         if sys.platform != "win32":
             return err_json("ERR_PLATFORM", "capture_window только на Windows", request_id=rid)
-        import os
-        import tempfile
-        import uuid
-
         import mss
 
         w = _resolve_top_window(process_name, title_contains)
         r = w.rectangle()
         bbox = {"left": int(r.left), "top": int(r.top), "width": int(r.width()), "height": int(r.height())}
-        if not out_path:
-            out_path = os.path.join(tempfile.gettempdir(), f"lep_mcp_cap_{uuid.uuid4().hex}.png")
+        explicit_suffix = (filename_suffix or "").strip()
+        auto_suffix = explicit_suffix
+        if not auto_suffix:
+            try:
+                tw = (w.window_text() or "").strip()
+                if tw:
+                    auto_suffix = _filename_slug_segment(tw, max_len=48)
+            except Exception:
+                pass
+        out_path = _resolve_png_out_path(
+            out_path,
+            auto_suffix or None,
+            default_prefix="lep_mcp_cap",
+        )
         with mss.mss() as sct:
             shot = sct.grab(bbox)
         return _save_grab_png(
@@ -1411,7 +1463,12 @@ def capture_window(
             out_path,
             include_base64,
             max_edge_px,
-            {"bbox": bbox, "capture_message": "capture_window"},
+            {
+                "bbox": bbox,
+                "filename_suffix": explicit_suffix or None,
+                "filename_slug_used": auto_suffix or None,
+                "capture_message": "capture_window",
+            },
             rid,
         )
     except ValueError as e:

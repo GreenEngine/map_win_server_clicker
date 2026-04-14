@@ -59,6 +59,7 @@ pip install -r requirements.txt
 | `MCP_LEP_COMMAND` | Строка команды для вызова палитры LEP из командной строки nanoCAD (по умолчанию **`LEP`**). Используется инструментом **`nanocad_lep_prepare`**, если параметр **`lep_command`** не передан. |
 | `MCP_ACTION_JSONL` | Путь к файлу **JSONL** (одна строка = один JSON): успешные (`ok=true`) вызовы инструментов после фильтра. Пусто — логирование выключено. Каталог создаётся при первой записи. |
 | `MCP_ACTION_JSONL_FILTER` | **`lep_only`** (по умолчанию) — только шаги, связанные с nanoCAD/LEP/модалками и т.п.; **`all`** — любой успешный инструмент. |
+| `MCP_CAPTURE_DIR` | Каталог для PNG, когда у **`capture_window`** / **`capture_monitor`** задан **`filename_suffix`**, но не задан **`out_path`**. Пусто — системный temp. |
 | `MCP_UPDATE_USE_PS1` | **`1`** — на Windows выполнять [scripts/update_server.ps1](scripts/update_server.ps1) вместо встроенного Python-пути (удобно для единой политики обновлений). |
 | `MCP_AUTH_TOKEN` | (Опционально) если позже добавите reverse-proxy с проверкой Bearer — см. ниже. |
 | `MCP_PYTHON` | Полный путь к `python.exe` для [scripts/setup_local.ps1](scripts/setup_local.ps1), если `python` не в PATH. |
@@ -152,13 +153,15 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 | `mouse_click_window` | Клик в **клиентских** координатах выбранного окна (`process_name` / `title_contains`): перевод в экран через **ClientToScreen** — предпочтительнее при расхождении DPI с bbox |
 | `wait_for_element` | Ожидание появления элемента; таймаут → `ERR_TIMEOUT` |
 | `send_keys` | Ввод текста в окно (осторожно) |
-| `capture_window` | PNG окна: `data.path` на сервере; **`data.png_base64`** (+ MIME в `data.image_mime_type`) для клиента на Mac. `max_edge_px` уменьшает встроенное изображение при больших мониторах; файл на диске остаётся полным кадром. В `data.content_hint` — эвристика «кадр пустой/без видео». **`data.bbox`** (`left`, `top`, `width`, `height`) — **экранные** пиксели кадра; для клика по картинке предпочтительнее **`mouse_click_window`** в координатах клиента окна, чем «голые» screen из bbox с эвристиками вроде −8 px. |
-| `capture_monitor` | PNG **целого монитора** (библиотека MSS): `monitor_index` **0** — все мониторы одним снимком, **1** — основной (по умолчанию). Полезно, когда нужен рабочий стол без привязки к `nCAD.exe`. Те же `include_base64` / `max_edge_px` / `content_hint`. |
+| `capture_window` | PNG окна: `data.path` на сервере; **`data.png_base64`** (+ MIME в `data.image_mime_type`) для клиента на Mac. **`filename_suffix`**: если **`out_path`** не задан — имя файла содержит слаг (латиница); иначе из заголовка окна (`data.filename_slug_used`). Каталог: **`MCP_CAPTURE_DIR`** или temp. `max_edge_px` уменьшает встроенное изображение при больших мониторах; файл на диске остаётся полным кадром. В `data.content_hint` — эвристика «кадр пустой/без видео». **`data.bbox`** — **экранные** пиксели кадра. |
+| `capture_monitor` | PNG **целого монитора** (MSS): `monitor_index` **0** / **1** и т.д. Параметр **`filename_suffix`** — как у **`capture_window`**, если **`out_path`** не задан. Те же `include_base64` / `max_edge_px` / `content_hint`. |
 | `launch_process` | Запуск `.exe` на Windows (отдельный процесс). Нужен **`MCP_ALLOW_LAUNCH=1`**; иначе `ERR_FORBIDDEN`. **`executable`**: полный путь или **`AUTO_NANOCAD`** / **`AUTO`** — поиск `nCAD.exe` в PATH и типичных каталогах Nanosoft. После старта ждёт появления процесса в UIA (`wait_timeout_sec`). |
 | `nanocad_lep_prepare` | Сценарий «nanoCAD + палитра LEP»: проверка UIA **`nCAD.exe`** → при необходимости **`launch_process` (AUTO_NANOCAD)** → серия **`uia_modal_ok`** / **`uia_modal_titlebar_close`** → клик командной строки (**`1011`**) → **`send_keys`** (команда из **`lep_command`** / **`MCP_LEP_COMMAND`** / **`LEP`**) → **`wait_for_element`** на **`lep_palette_root`**. Реализация: **`src/nanocad_bootstrap.py`**. При уже открытой палитре повторный ввод команды не выполняется (`data.skipped_command_input`). |
 | `action_json_log_recent` | Чтение **последних** записей из **`MCP_ACTION_JSONL`** (`data.entries`: `action_signature`, `replay_hint`, `params`, `response_summary`). Если лог не настроен — `data.enabled=false`. Используйте для пропуска уже выполненных шагов в повторном прогоне. |
 
 **Формат строки лога** (append, UTF-8): `logged_at_utc`, `tool`, `request_id`, **`action_signature`** (SHA-256 от tool+params, 24 hex — стабильный ключ шага), **`replay_hint`**, `params` (без секретов; длинные строки усечены), `response_summary`, `protocol_version`.
+
+**Сценарии QA (JSON):** каталог [scenarios/](scenarios/README.md); генерация промпта для агента: `python scripts/run_lep_scenario.py --scenario scenarios/_template.json` (или `--name _template`).
 
 Обновление вручную без MCP: [scripts/update_server.ps1](scripts/update_server.ps1).
 

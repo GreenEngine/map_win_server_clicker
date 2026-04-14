@@ -1,0 +1,100 @@
+{
+  "id": "lep_feature_template",
+  "title": "Шаблон: подготовка CAD + ворота + палитра + один клик по вкладке",
+  "version": 1,
+  "skip_nanocad_lep_prepare": false,
+  "requires": {
+    "golden_dwg": false,
+    "note": "При необходимости задайте LEP_GOLDEN_DWG и шаг открытия чертежа вручную до сценария."
+  },
+  "steps": [
+    {
+      "n": 1,
+      "invoke": "health",
+      "args": {},
+      "expect": "ok=true"
+    },
+    {
+      "n": 2,
+      "invoke": "agent_session",
+      "args": {},
+      "expect": "в tools есть nanocad_lep_prepare и нужные инструменты"
+    },
+    {
+      "n": 3,
+      "invoke": "nanocad_lep_prepare",
+      "args": { "skip_launch_if_running": true },
+      "expect": "data.palette_ready или палитра уже была; в data.steps виден журнал"
+    },
+    {
+      "n": 4,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "gate_after_prepare_win"
+      },
+      "expect": "на скрине слева видна палитра LEP",
+      "capture_label": "gate_after_prepare"
+    },
+    {
+      "n": 5,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "gate_after_prepare_mon"
+      },
+      "expect": "виден видовой экран и палитра",
+      "capture_label": "gate_after_prepare"
+    },
+    {
+      "n": 6,
+      "invoke": "uia_list_subtree",
+      "args": {
+        "process_name": "nCAD.exe",
+        "anchor_automation_id": "lep_palette_root",
+        "max_depth": 12,
+        "max_nodes": 1200
+      },
+      "expect": "data.items не пустой, якорь палитры найден"
+    },
+    {
+      "n": 7,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_route",
+        "nth": 0
+      },
+      "expect": "клик по вкладке Трасса (lep_tab_route) доставлен",
+      "capture_label": "after_tab_route"
+    },
+    {
+      "n": 8,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "after_tab_route_win"
+      },
+      "expect": "вкладка Трасса активна на скрине",
+      "capture_label": "after_tab_route"
+    },
+    {
+      "n": 9,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "after_tab_route_mon"
+      },
+      "expect": "контекст экрана без лишней модалки",
+      "capture_label": "after_tab_trassa"
+    }
+  ]
+}

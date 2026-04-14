@@ -319,6 +319,7 @@ def capture_window(
     process_name: str | None = None,
     title_contains: str | None = None,
     out_path: str | None = None,
+    filename_suffix: str | None = None,
     include_base64: bool = True,
     max_edge_px: int = 2400,
     client_request_id: str | None = None,
@@ -327,11 +328,13 @@ def capture_window(
     PNG снимок окна: data.path на Windows.
     При include_base64=True в data.png_base64 — картинка для удалённого клиента (Mac и т.д.).
     max_edge_px>0 ограничивает большую сторону встраиваемого PNG; файл на диске — полный кадр.
+    filename_suffix: если out_path не задан — фрагмент имени (латиница); иначе подстановка из заголовка окна (data.filename_slug_used).
     """
     return uia_tools.capture_window(
         process_name,
         title_contains,
         out_path,
+        filename_suffix,
         include_base64,
         max_edge_px,
         client_request_id,
@@ -425,6 +428,7 @@ def nanocad_lep_prepare(
 def capture_monitor(
     monitor_index: int = 1,
     out_path: str | None = None,
+    filename_suffix: str | None = None,
     include_base64: bool = True,
     max_edge_px: int = 2400,
     client_request_id: str | None = None,
@@ -432,11 +436,13 @@ def capture_monitor(
     """
     Снимок всего монитора (MSS), без привязки к окну процесса.
     monitor_index: 0 — все мониторы одним кадром, 1 — основной (часто нужен он).
+    filename_suffix: если out_path не задан — фрагмент имени PNG (каталог MCP_CAPTURE_DIR или temp).
     Если после отключения RDP кадр чёрный — смотрите data.content_hint и README (виртуальный дисплей).
     """
     return uia_tools.capture_monitor(
         monitor_index,
         out_path,
+        filename_suffix,
         include_base64,
         max_edge_px,
         client_request_id,
