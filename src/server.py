@@ -113,6 +113,31 @@ def uia_list(
 
 
 @mcp.tool()
+def uia_list_subtree(
+    process_name: str | None = None,
+    title_contains: str | None = None,
+    anchor_automation_id: str | None = "lep_palette_root",
+    anchor_name_contains: str | None = None,
+    max_depth: int = 12,
+    max_nodes: int = 1200,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Список UI только под якорём палитры LEP (по умолчанию automation_id lep_palette_root),
+    без обхода всей ленты nCAD.exe — меньше data.truncated на подвкладках «Создание» / «Анализ».
+    """
+    return uia_tools.uia_list_subtree(
+        process_name,
+        title_contains,
+        anchor_automation_id,
+        anchor_name_contains,
+        max_depth,
+        max_nodes,
+        client_request_id,
+    )
+
+
+@mcp.tool()
 def uia_click(
     process_name: str | None = None,
     title_contains: str | None = None,
@@ -162,11 +187,13 @@ def uia_modal_ok(
     max_window_width: int = 1400,
     max_window_height: int = 950,
     timeout_sec: float = 5.0,
+    owner_process_name: str | None = "nCAD.exe",
     client_request_id: str | None = None,
 ) -> str:
     """
     Найти модальное окно (MessageBox / диалог поверх nanoCAD) по заголовку или классу #32770
     и нажать первую найденную кнопку из button_titles. Не зависит от process_name главного окна.
+    owner_process_name: приоритет owned-модалок от nCAD в Win32-фолбэке; пустая строка — отключить.
     """
     return uia_tools.uia_modal_ok(
         title_regex,
@@ -174,6 +201,7 @@ def uia_modal_ok(
         max_window_width,
         max_window_height,
         timeout_sec,
+        owner_process_name,
         client_request_id,
     )
 
@@ -206,6 +234,53 @@ def mouse_click(
 ) -> str:
     """Клик мыши в экранных координатах (например крестик по расчёту от capture_monitor)."""
     return uia_tools.mouse_click(screen_x, screen_y, button, double, client_request_id)
+
+
+@mcp.tool()
+def mouse_click_window(
+    client_x: int,
+    client_y: int,
+    process_name: str | None = None,
+    title_contains: str | None = None,
+    button: str = "left",
+    double: bool = False,
+    client_request_id: str | None = None,
+) -> str:
+    """Клик в клиентских координатах окна (ClientToScreen); надёжнее DPI, чем голый screen_x/y от bbox."""
+    return uia_tools.mouse_click_window(
+        client_x,
+        client_y,
+        process_name,
+        title_contains,
+        button,
+        double,
+        client_request_id,
+    )
+
+
+@mcp.tool()
+def mouse_move(
+    screen_x: int,
+    screen_y: int,
+    client_request_id: str | None = None,
+) -> str:
+    """Переместить курсор в экранные координаты без клика (чтобы было видно на RDP)."""
+    return uia_tools.mouse_move(screen_x, screen_y, client_request_id)
+
+
+@mcp.tool()
+def mouse_move_smooth(
+    screen_x: int,
+    screen_y: int,
+    steps: int = 28,
+    pause_ms: float = 18.0,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Плавно провести курсор к точке (от текущей позиции по прямой).
+    Перед кликом по модалке вызывайте это — наблюдатель увидит движение мыши.
+    """
+    return uia_tools.mouse_move_smooth(screen_x, screen_y, steps, pause_ms, client_request_id)
 
 
 @mcp.tool()

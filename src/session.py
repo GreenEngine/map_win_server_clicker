@@ -32,12 +32,16 @@ def agent_session_payload() -> dict[str, Any]:
         {"name": "server_update", "role": "обновление pip/git; только при MCP_ALLOW_SELF_UPDATE=1"},
         {"name": "uia_list", "role": "дерево UI в JSON (data.items); смотреть data.truncated"},
         {
+            "name": "uia_list_subtree",
+            "role": "LEP: дерево только под якорем палитры (anchor_automation_id lep_palette_root или regex); меньше truncated, видны подвкладки Трасса",
+        },
+        {
             "name": "uia_click",
-            "role": "клик по селектору; сразу после — capture_window + uia_list (см. workflow)",
+            "role": "клик по селектору; сразу после — capture_window + capture_monitor (base64), проверка результата по скринам, затем uia_list_subtree или uia_list (см. workflow)",
         },
         {
             "name": "uia_modal_ok",
-            "role": "закрыть MessageBox/модалку (OK/ОК): обход top-level Desktop, не только nCAD.exe — после скрина с «Внимание»",
+            "role": "закрыть MessageBox/модалку (OK/ОК): UIA + Win32 (owned nCAD, дочерние Button, GetDlgItem); data.via / hwnd / owner_hwnd для отчёта",
         },
         {
             "name": "uia_modal_titlebar_close",
@@ -47,14 +51,26 @@ def agent_session_payload() -> dict[str, Any]:
             "name": "mouse_click",
             "role": "клик мыши в экранных координатах (screen_x, screen_y) — крестик/точка, вычисленная агентом по capture_monitor/window",
         },
+        {
+            "name": "mouse_click_window",
+            "role": "клик в клиентских координатах окна (ClientToScreen) — надёжнее DPI, чем screen_x/y от bbox скрина",
+        },
+        {
+            "name": "mouse_move",
+            "role": "переместить курсор без клика (мгновенно) — чтобы было видно на RDP перед действием",
+        },
+        {
+            "name": "mouse_move_smooth",
+            "role": "плавно вести курсор к (screen_x, screen_y) от текущей позиции (steps, pause_ms) — перед mouse_click для наглядности",
+        },
         {"name": "wait_for_element", "role": "ожидание элемента; ERR_TIMEOUT если не дождались"},
         {
             "name": "send_keys",
-            "role": "ввод текста в окно; сразу после — capture_window + uia_list (см. workflow)",
+            "role": "ввод текста: если на переднем плане модалка #32770 — фокус на неё; иначе process_name/title_contains + SetForegroundWindow; затем capture_* и uia_list",
         },
         {
             "name": "capture_window",
-            "role": "Снимок окна: data.png_base64 (include_base64=true) — обязателен после действий; визуально проверить результат",
+            "role": "Снимок окна: data.png_base64 (include_base64=true) — пара с capture_monitor; по картинке подтвердить эффект шага",
         },
         {
             "name": "capture_monitor",
@@ -68,22 +84,25 @@ def agent_session_payload() -> dict[str, Any]:
     workflow = [
         "1) Вызвать health — убедиться, что JSON парсится и ok=true.",
         "2) Вызвать agent_session — прочитать protocol_version и рекомендуемые инструменты.",
-        "3) uia_list с process_name или title_contains — сохранить automation_id для цели.",
+        "2b) LEP: перед кликами по вкладкам палитры — capture_window + capture_monitor (include_base64=true) и проверить на картинке, "
+        "что панель LEP слева открыта (заголовок LEP, вкладки). Если палитры нет — клик по командной строке automation_id 1011, "
+        "send_keys LEP + with_enter, снова пара снимков. Не тестировать вкладки «вслепую», если на скрине нет палитры.",
+        "3) Для палитры LEP: сначала uia_list_subtree(process_name=nCAD.exe) — сохранить automation_id/name; при ERR_NOT_FOUND якоря — uia_list с большим max_nodes.",
         "4) При необходимости wait_for_element перед кликом.",
         "5) uia_click; при ошибке ERR_NOT_FOUND повторить uia_list (UI мог смениться).",
         "5b) Если на capture видна модалка (Внимание, Ошибка и т.д.), а uia_click по OK в nCAD.exe даёт ERR_NOT_FOUND — "
-        "сначала uia_modal_ok; при необходимости uia_modal_titlebar_close (клик по [X]); иначе по координатам крестика со скрина — "
-        "mouse_click(screen_x, screen_y); затем снова capture_window + capture_monitor.",
+        "сначала uia_modal_ok (owner_process_name=nCAD.exe по умолчанию); при необходимости uia_modal_titlebar_close; "
+        "для клика по области окна предпочтительнее mouse_click_window(client_x, client_y) вместо голого mouse_click от bbox; "
+        "иначе mouse_move_smooth + mouse_click в экранных координатах; затем capture_window + capture_monitor.",
         "6) Передавать client_request_id (корреляция) во все инструменты — тот же id вернётся в request_id.",
-        "7) ОБЯЗАТЕЛЬНО после каждого send_keys, uia_click или любого шага, меняющего экран: capture_window "
-        "по целевому окну (обычно process_name=nCAD.exe или title_contains окна плагина), "
-        "include_base64=true, при большом экране задать max_edge_px. Если нужен весь рабочий стол без окна "
-        "(например процесс не найден) — capture_monitor с monitor_index=1; смотреть data.content_hint "
+        "7) ОБЯЗАТЕЛЬНО после каждого send_keys, uia_click или любого шага, меняющего экран: пара снимков — "
+        "capture_window по целевому окну (обычно process_name=nCAD.exe или title_contains окна плагина) "
+        "и capture_monitor (include_base64=true у обоих; при большом экране max_edge_px). "
+        "Если окно не найдено — хотя бы capture_monitor с monitor_index=1; смотреть data.content_hint "
         "(likely_blank_or_no_video_output после отключения RDP без виртуального монитора). "
-        "Агент проверяет data.png_base64 и сопоставляет с ожидаемым; при расхождении не продолжать вслепую.",
-        "8) После каждого снимка — uia_list того же контекста; для UI плагина LEP дополнительно опросить окна по "
-        "title_contains: «LEP», «Кабельные», «палитр», «LEP -» (регистр как в ОС). Цель — полностью описать "
-        "доступные элементы панелей/форм; при data.truncated=true увеличить max_depth и max_nodes и повторить.",
+        "По обоим data.png_base64 подтвердить: достигнут ли ожидаемый результат шага (вкладка, панель, модалка закрыта, при необходимости виден кадр чертежа); "
+        "при расхождении — не PASS и не следующий шаг; ok=true у uia_click не равно успеху теста.",
+        "8) После проверки скринов — uia_list_subtree или uia_list; для LEP при truncated=true увеличить max_depth/max_nodes или сузить якорь (anchor_name_contains).",
         "9) Полная проверка UI плагина: пройти все найденные кнопки/вкладки/поля ввода из uia_list, при сомнении "
         "снова capture_window после локального действия; не пропускать модальные окна (Совет дня, ошибки NETLOAD).",
         "10) Если после команды плагина (LEP_*, NETLOAD) в дереве нет ожидаемых имён — зафиксировать и запросить "

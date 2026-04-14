@@ -111,7 +111,7 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 | `ok` | `true` / `false` |
 | `code` | `OK` или код ошибки (`ERR_PLATFORM`, `ERR_VALIDATION`, `ERR_NOT_FOUND`, `ERR_TIMEOUT`, `ERR_UIA`, `ERR_UPDATE`, `ERR_FORBIDDEN`, …) |
 | `message` | Кратко для человека |
-| `protocol_version` | Версия контракта (см. `src/protocol.py`; **1.5** — `launch_process`, `capture_monitor`, `content_hint`) |
+| `protocol_version` | Версия контракта (см. `src/protocol.py`; **1.7** — `uia_list_subtree`, `mouse_click_window`, расширенный Win32-фолбэк `uia_modal_ok`, фокус в `send_keys`) |
 | `request_id` | UUID; совпадает с переданным **`client_request_id`**, если агент его задал |
 | `server_time_utc` | Метка времени ответа |
 | `data` | Полезная нагрузка (объект; при ошибке может быть пустым или с диагностикой) |
@@ -120,12 +120,12 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 
 1. **`health`** — проверить связь и то, что ответ парсится.
 2. **`agent_session`** — получить `protocol_version`, список инструментов, **`workflow`**, поле **`lep_ui_titles_hint`** (подсказки `title_contains` для LEP), снимок безопасных env.
-3. **`uia_list`** — построить карту UI; смотреть `data.truncated` (лимиты глубины/узлов).
+3. **`uia_list_subtree`** (LEP) — карта UI **только палитры** (якорь `lep_palette_root` или regex по заголовку); меньше `truncated`, видны подвкладки **Создание / Анализ / …**. Иначе **`uia_list`** по `nCAD.exe` с большим `max_nodes` — смотреть `data.truncated`.
 4. При необходимости **`wait_for_element`**, затем **`uia_click`**; при `ERR_NOT_FOUND` снова **`uia_list`**.
-4b. Если на **`capture_*`** видна **MessageBox** / **«Внимание»**, а **`uia_click`** по **OK** в **`nCAD.exe`** даёт **`ERR_NOT_FOUND`** — **`uia_modal_ok`**, при необходимости **`uia_modal_titlebar_close`** (крестик), иначе **`mouse_click`** по координатам крестика (расчёт от снимка / границ окна), затем снова пару снимков.
+4b. Если на **`capture_*`** видна **MessageBox** / **«Внимание»**, а **`uia_click`** по **OK** в **`nCAD.exe`** даёт **`ERR_NOT_FOUND`** — **`uia_modal_ok`**, при необходимости **`uia_modal_titlebar_close`** (крестик), иначе сначала **`mouse_move_smooth`** (или **`mouse_move`**) к точке, затем **`mouse_click`** по координатам крестика/OK (расчёт от снимка / границ окна) — иначе курсор «прыгает» и на RDP не видно движения; затем снова пару снимков.
 5. Один и тот же **`client_request_id`** — во все инструменты одной задачи.
-6. **После каждого `send_keys` / `uia_click` / шага, меняющего экран:** сразу **`capture_window`** целевого окна с **`include_base64=true`** — агент **сам** смотрит **`data.png_base64`** и сверяет с ожидаемым результатом (не продолжать вслепую при расхождении).
-7. **После каждого снимка:** снова **`uia_list`**; для плагина LEP — дополнительно вызовы с **`title_contains`** из `lep_ui_titles_hint`, при **`truncated`** увеличить **`max_depth` / `max_nodes`** и повторить, пока дерево плагина не описано достаточно полно.
+6. **После каждого `send_keys` / `uia_click` / шага, меняющего экран:** **`capture_window`** и **`capture_monitor`** с **`include_base64=true`** — по **обоим** снимкам **подтвердить**, что **результат шага достигнут** (нужная вкладка/панель, нет лишней модалки, при необходимости виден кадр чертежа). Успех **`uia_click`** (`ok: true`) не равен успеху сценария. При расхождении с ожиданием — не PASS и не следующий шаг.
+7. **После проверки скринов:** снова **`uia_list`**; для плагина LEP — дополнительно вызовы с **`title_contains`** из `lep_ui_titles_hint`, при **`truncated`** увеличить **`max_depth` / `max_nodes`** и повторить, пока дерево плагина не описано достаточно полно.
 8. Не игнорировать модальные окна (**«Совет дня»**, ошибки **NETLOAD** и т.д.); снимок должен это показывать.
 9. Если после команд плагина в UI нет ожидаемых элементов — сообщить пользователю (загрузка DLL, `LEP.cfg`), не имитировать успех.
 
@@ -138,13 +138,17 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 | `server_info` | Версия Python, пути, git — в `data` |
 | `server_update` | `pip` / `git_pull` / `full`; лог в `data.log`; при успехе **`data.restart_scheduled`** — запланирован автоперезапуск (если не **`MCP_RESTART_AFTER_UPDATE=0`**). Нужен **`MCP_ALLOW_SELF_UPDATE=1`**; иначе `ERR_FORBIDDEN`. |
 | `uia_list` | Плоский список элементов в `data.items`; `process_name` (exe) или `title_contains` |
+| `uia_list_subtree` | Как `uia_list`, но обход **от якоря палитры LEP** (`anchor_automation_id`, по умолчанию `lep_palette_root`, иначе regex по имени) — не съедает квоту лентой |
 | `uia_click` | Клик по `automation_id` / `name` / `control_type`, опционально `nth` |
-| `uia_modal_ok` | Закрыть модалку **MessageBox** / `#32770`: обход top-level окон, клик **OK** / **ОК** (`title_regex`, `button_titles`, лимиты размера окна) |
+| `uia_modal_ok` | Закрыть модалку **MessageBox** / `#32770`: UIA + Win32 (owned от `owner_process_name`, дочерние **Button**, `GetDlgItem(1)`); в `data` — `via`, `hwnd`, `owner_hwnd` |
 | `uia_modal_titlebar_close` | Закрыть ту же модалку **кликом по [X]** в caption: координаты от `rectangle()` окна и **DPI** (`GetDpiForWindow`) |
+| `mouse_move` | Переместить курсор в **экранные** координаты **без клика** (чтобы было видно на удалённом столе) |
+| `mouse_move_smooth` | Плавно вести курсор от **текущей** позиции к `(screen_x, screen_y)`: параметры `steps`, `pause_ms` — перед **`mouse_click`** для наглядности |
 | `mouse_click` | Клик мыши в **экранных** координатах `screen_x`, `screen_y` (`left`/`right`/`middle`, опционально `double`) — вручную по скрину |
+| `mouse_click_window` | Клик в **клиентских** координатах выбранного окна (`process_name` / `title_contains`): перевод в экран через **ClientToScreen** — предпочтительнее при расхождении DPI с bbox |
 | `wait_for_element` | Ожидание появления элемента; таймаут → `ERR_TIMEOUT` |
 | `send_keys` | Ввод текста в окно (осторожно) |
-| `capture_window` | PNG окна: `data.path` на сервере; **`data.png_base64`** (+ MIME в `data.image_mime_type`) для клиента на Mac. `max_edge_px` уменьшает встроенное изображение при больших мониторах; файл на диске остаётся полным кадром. В `data.content_hint` — эвристика «кадр пустой/без видео». |
+| `capture_window` | PNG окна: `data.path` на сервере; **`data.png_base64`** (+ MIME в `data.image_mime_type`) для клиента на Mac. `max_edge_px` уменьшает встроенное изображение при больших мониторах; файл на диске остаётся полным кадром. В `data.content_hint` — эвристика «кадр пустой/без видео». **`data.bbox`** (`left`, `top`, `width`, `height`) — **экранные** пиксели кадра; для клика по картинке предпочтительнее **`mouse_click_window`** в координатах клиента окна, чем «голые» screen из bbox с эвристиками вроде −8 px. |
 | `capture_monitor` | PNG **целого монитора** (библиотека MSS): `monitor_index` **0** — все мониторы одним снимком, **1** — основной (по умолчанию). Полезно, когда нужен рабочий стол без привязки к `nCAD.exe`. Те же `include_base64` / `max_edge_px` / `content_hint`. |
 | `launch_process` | Запуск `.exe` на Windows (отдельный процесс). Нужен **`MCP_ALLOW_LAUNCH=1`**; иначе `ERR_FORBIDDEN`. **`executable`**: полный путь или **`AUTO_NANOCAD`** / **`AUTO`** — поиск `nCAD.exe` в PATH и типичных каталогах Nanosoft. После старта ждёт появления процесса в UIA (`wait_timeout_sec`). |
 

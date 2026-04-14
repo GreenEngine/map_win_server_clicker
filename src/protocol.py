@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-PROTOCOL_VERSION = "1.5"
+PROTOCOL_VERSION = "1.7"
 
 
 def _ts() -> str:
