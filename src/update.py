@@ -90,31 +90,41 @@ def schedule_restart_after_update() -> None:
             # Дать клиенту получить JSON-ответ server_update до выхода процесса.
             time.sleep(2.5)
             if sys.platform == "win32":
-                # Для запуска из PowerShell/терминала надёжнее запускать новый server.py
-                # через отдельный powershell Start-Process с задержкой: старый процесс успеет
-                # освободить порт до старта нового.
-                def _sq(v: str) -> str:
-                    return v.replace("'", "''")
-
-                ps_cmd = (
-                    "Start-Sleep -Seconds 4; "
-                    f"Start-Process -FilePath '{_sq(python_exe)}' "
-                    f"-ArgumentList '{_sq(str(server_py))}' "
-                    f"-WorkingDirectory '{_sq(cwd)}' -WindowStyle Hidden"
-                )
                 cf = int(getattr(subprocess, "DETACHED_PROCESS", 0x00000008))
                 cf |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
                 cf |= int(getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
-                subprocess.Popen(
-                    ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_cmd],
-                    cwd=cwd,
-                    creationflags=cf,
-                    close_fds=True,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                ok_spawn = True
+                if helper.is_file():
+                    subprocess.Popen(
+                        [python_exe, str(helper), str(pid), python_exe, str(server_py), cwd],
+                        cwd=cwd,
+                        creationflags=cf,
+                        close_fds=True,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    ok_spawn = True
+                else:
+                    # Fallback на случай отсутствия helper: delayed Start-Process.
+                    def _sq(v: str) -> str:
+                        return v.replace("'", "''")
+
+                    ps_cmd = (
+                        "Start-Sleep -Seconds 4; "
+                        f"Start-Process -FilePath '{_sq(python_exe)}' "
+                        f"-ArgumentList '{_sq(str(server_py))}' "
+                        f"-WorkingDirectory '{_sq(cwd)}' -WindowStyle Hidden"
+                    )
+                    subprocess.Popen(
+                        ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_cmd],
+                        cwd=cwd,
+                        creationflags=cf,
+                        close_fds=True,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    ok_spawn = True
             else:
                 if not helper.is_file():
                     return
@@ -215,7 +225,37 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
         if mode_l in ("git_pull", "full"):
             git_dir = root / ".git"
             if git_dir.exists():
-                run(["git", "pull", "--ff-only"], cwd=root)
+                run(["git", "fetch", "origin"], cwd=root)
+                branch_probe = subprocess.run(
+                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                    cwd=str(root),
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                branch = (branch_probe.stdout or "").strip() or "main"
+
+                def _has_origin_ref(ref_name: str) -> bool:
+                    chk = subprocess.run(
+                        ["git", "show-ref", "--verify", f"refs/remotes/origin/{ref_name}"],
+                        cwd=str(root),
+                        capture_output=True,
+                        text=True,
+                        timeout=20,
+                    )
+                    return chk.returncode == 0
+
+                target = branch if _has_origin_ref(branch) else ""
+                if not target and _has_origin_ref("main"):
+                    target = "main"
+                if not target and _has_origin_ref("master"):
+                    target = "master"
+
+                if target:
+                    run(["git", "pull", "--ff-only", "origin", target], cwd=root)
+                else:
+                    # Редкий случай нетипичного remote layout.
+                    run(["git", "pull", "--ff-only"], cwd=root)
             else:
                 lines.append(f"Пропуск git pull: нет {git_dir}")
 
