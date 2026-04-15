@@ -12,7 +12,7 @@ from typing import Any
 from src.protocol import err_json, ok_json, parse_request_id
 
 # Меняйте при доработке модалок / send_keys — смотрите agent_session.uia_tools_revision.
-UIA_TOOLS_REVISION = "2026-04-15-uia-tabitem-select-invoke-fallback-v1"
+UIA_TOOLS_REVISION = "2026-04-15-capture-pick-main-ncad-v1"
 
 
 def _modal_poll_sec() -> float:
@@ -304,6 +304,61 @@ def _resolve_top_window(process_name: str | None, title_contains: str | None) ->
         w.wait("exists", timeout=5)
         return w
     raise ValueError("Укажите process_name (например notepad.exe) или title_contains")
+
+
+def _pick_largest_mainlike_window(app: Any) -> Any:
+    """
+    Если у процесса несколько top-level окон, `top_window()` для nanoCAD иногда
+    указывает не на главный кадр чертежа. Выбираем видимое окно с максимальным
+    скорингом: заголовок с nanoCAD / .dwg / LEP, большая площадь; штраф за PowerShell/CMD.
+    """
+    try:
+        wins = [w for w in app.windows() if w.is_visible()]
+    except Exception:
+        wins = []
+    if not wins:
+        w = app.top_window()
+        w.wait("exists", timeout=5)
+        return w
+
+    def rank(w: Any) -> int:
+        try:
+            title = (w.window_text() or "").strip()
+            r = w.rectangle()
+            try:
+                area = max(0, int(r.width()) * int(r.height()))
+            except Exception:
+                area = max(0, int(r.right) - int(r.left)) * max(0, int(r.bottom) - int(r.top))
+            tl = title.lower()
+            score = min(area, 80_000_000)
+            if "nanocad" in tl or ".dwg" in tl:
+                score += 2_000_000_000
+            if "lep" in tl and ("система" in tl or "автоматизац" in tl):
+                score += 800_000_000
+            for bad in ("powershell", "windows pow", "cmd.exe", "консоль"):
+                if bad in tl:
+                    score -= 3_000_000_000
+            return score
+        except Exception:
+            return 0
+
+    best = max(wins, key=rank)
+    best.wait("exists", timeout=2)
+    return best
+
+
+def _resolve_window_for_capture(process_name: str | None, title_contains: str | None) -> Any:
+    """Обёртка для capture_window: надёжнее выбрать главное окно nanoCAD."""
+    if title_contains:
+        return _resolve_top_window(process_name, title_contains)
+    pn = (process_name or "").strip().lower()
+    if not process_name or not pn.endswith("ncad.exe"):
+        return _resolve_top_window(process_name, title_contains)
+    _require_win()
+    from pywinauto import Application
+
+    app = Application(backend="uia").connect(path=process_name)
+    return _pick_largest_mainlike_window(app)
 
 
 def _find_uia_subtree_anchor(
@@ -1710,7 +1765,7 @@ def capture_window(
             return err_json("ERR_PLATFORM", "capture_window только на Windows", request_id=rid)
         import mss
 
-        w = _resolve_top_window(process_name, title_contains)
+        w = _resolve_window_for_capture(process_name, title_contains)
         r = w.rectangle()
         bbox = {"left": int(r.left), "top": int(r.top), "width": int(r.width()), "height": int(r.height())}
         explicit_suffix = (filename_suffix or "").strip()
@@ -1729,17 +1784,22 @@ def capture_window(
         )
         with mss.mss() as sct:
             shot = sct.grab(bbox)
+        cap_extra: dict[str, Any] = {
+            "bbox": bbox,
+            "filename_suffix": explicit_suffix or None,
+            "filename_slug_used": auto_suffix or None,
+            "capture_message": "capture_window",
+        }
+        try:
+            cap_extra["window_title"] = (w.window_text() or "")[:240]
+        except Exception:
+            pass
         return _save_grab_png(
             shot,
             out_path,
             include_base64,
             max_edge_px,
-            {
-                "bbox": bbox,
-                "filename_suffix": explicit_suffix or None,
-                "filename_slug_used": auto_suffix or None,
-                "capture_message": "capture_window",
-            },
+            cap_extra,
             rid,
         )
     except ValueError as e:

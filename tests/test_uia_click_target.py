@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.uia_tools import _click_uia_target
+from src.uia_tools import _click_uia_target, _pick_largest_mainlike_window
 
 
 class _Rect:
@@ -46,6 +46,21 @@ def test_invoke_when_select_missing() -> None:
     strategy, meta = _click_uia_target(t)
     assert strategy == "pattern_invoke"
     t.invoke.assert_called_once()
+
+
+def test_pick_largest_mainlike_prefers_nanocad_title() -> None:
+    app = MagicMock()
+    w_ps = MagicMock()
+    w_ps.is_visible.return_value = True
+    w_ps.window_text.return_value = "Windows PowerShell"
+    w_ps.rectangle.return_value = _Rect(0, 0, 900, 700)
+    w_nc = MagicMock()
+    w_nc.is_visible.return_value = True
+    w_nc.window_text.return_value = "Plan.dwg - nanoCAD"
+    w_nc.rectangle.return_value = _Rect(0, 0, 800, 600)
+    app.windows.return_value = [w_ps, w_nc]
+    best = _pick_largest_mainlike_window(app)
+    assert best is w_nc
 
 
 def test_raises_when_no_pattern_and_rect_bad() -> None:
