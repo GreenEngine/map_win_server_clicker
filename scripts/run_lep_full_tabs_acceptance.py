@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Приёмка LEP в nanoCAD: smoke MCP + полный обход главных вкладок палитры (UIA).
+Приёмка LEP в nanoCAD: вспомогательный скрипт для **опционального** bulk-прогона на ВМ.
 
-Один вызов на стороне ВМ (без пошагового агента в Cursor):
-  MCP tool **lep_run_scenario_sequence** с
-  scenario_names_csv = smoke + полный палитровый сценарий (см. DEFAULT_SEQUENCE ниже).
+В Cursor приоритет — **пошаговый** QA агентом (см. `.cursor/agents/lep-plugin-tester.md`,
+«Режим приёмки: агент думает»): клик → два снимка → вывод по картинке. Один вызов
+**lep_run_scenario_sequence** не заменяет эту проверку.
 
-Сценарии и id вкладок: ../scenarios/*.json, эталон **ALL/Docs/QA_UiaIds.md** (в корне LEP).
+Этот файл генерирует подсказку для **одного** вызова на стороне ВМ (без чата):
+  MCP tool **lep_run_scenario_sequence** с scenario_names_csv = smoke + палитра (DEFAULT_SEQUENCE).
+
+Сценарии: ../scenarios/*.json; эталон id: **ALL/Docs/QA_UiaIds.md** (в корне LEP).
 
 Примеры:
   python scripts/run_lep_full_tabs_acceptance.py --validate

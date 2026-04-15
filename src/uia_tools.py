@@ -12,7 +12,7 @@ from typing import Any
 from src.protocol import err_json, ok_json, parse_request_id
 
 # Меняйте при доработке модалок / send_keys — смотрите agent_session.uia_tools_revision.
-UIA_TOOLS_REVISION = "2026-04-15-descendants-autoid-fallback-v1"
+UIA_TOOLS_REVISION = "2026-04-15-uia-tabitem-select-invoke-fallback-v1"
 
 
 def _modal_poll_sec() -> float:
@@ -476,6 +476,56 @@ def uia_list(
         return err_json("ERR_UIA", str(e), request_id=rid)
 
 
+def _click_uia_target(target: Any) -> tuple[str, dict[str, Any]]:
+    """
+    Клик по UIA-элементу. WinForms TabItem в палитре LEP часто даёт rectangle с нулевой
+    высотой/площадью — тогда click_input не переключает вкладку; пробуем SelectionItemPattern
+    (select) и InvokePattern (invoke) в духе pywinauto.
+    Возвращает (стратегия, метаданные для ответа MCP).
+    """
+    meta: dict[str, Any] = {}
+    try:
+        r = target.rectangle()
+        meta["rectangle"] = {
+            "left": int(r.left),
+            "top": int(r.top),
+            "right": int(r.right),
+            "bottom": int(r.bottom),
+        }
+        w = max(0, int(r.right) - int(r.left))
+        h = max(0, int(r.bottom) - int(r.top))
+        meta["rect_width"] = w
+        meta["rect_height"] = h
+        if w >= 4 and h >= 4:
+            target.click_input()
+            return "click_input", meta
+    except Exception as e:
+        meta["rectangle_error"] = str(e)
+
+    # Пустой или вырожденный bbox (типично TabItem на WinForms)
+    for attr in ("select", "invoke"):
+        fn = getattr(target, attr, None)
+        if not callable(fn):
+            continue
+        try:
+            fn()
+            meta["click_via"] = attr
+            return f"pattern_{attr}", meta
+        except Exception as e:
+            meta[f"{attr}_error"] = str(e)
+
+    try:
+        target.click_input()
+        meta["click_via"] = "click_input_degenerate_rect"
+        return "click_input", meta
+    except Exception as e:
+        meta["click_input_error"] = str(e)
+    raise RuntimeError(
+        "Элемент найден, но прямоугольник пустой/вырожденный и недоступны UIA-паттерны "
+        "select/invoke; используйте координаты из uia_list_subtree и mouse_click / mouse_click_window."
+    )
+
+
 def uia_click(
     process_name: str | None = None,
     title_contains: str | None = None,
@@ -517,12 +567,14 @@ def uia_click(
                 request_id=rid,
             )
         target = matches[nth]
-        target.click_input()
+        strategy, click_meta = _click_uia_target(target)
         return ok_json(
             data={
                 "clicked_index": nth,
                 "matches_total": len(matches),
                 "element_info": str(target.element_info),
+                "click_strategy": strategy,
+                **click_meta,
             },
             message="uia_click",
             request_id=rid,
