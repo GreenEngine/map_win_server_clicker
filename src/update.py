@@ -83,12 +83,20 @@ def schedule_restart_after_update() -> None:
     python_exe = sys.executable
     pid = os.getpid()
     cwd = str(srv)
+    log_dir = srv / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    helper_log = log_dir / "mcp_restart_helper.log"
 
     def _restart() -> None:
         ok_spawn = False
         try:
             # Дать клиенту получить JSON-ответ server_update до выхода процесса.
             time.sleep(2.5)
+            env_helper = os.environ.copy()
+            env_helper["MCP_RESTART_LOG"] = str(helper_log)
             if sys.platform == "win32":
                 cf = int(getattr(subprocess, "DETACHED_PROCESS", 0x00000008))
                 cf |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
@@ -97,6 +105,7 @@ def schedule_restart_after_update() -> None:
                     subprocess.Popen(
                         [python_exe, str(helper), str(pid), python_exe, str(server_py), cwd],
                         cwd=cwd,
+                        env=env_helper,
                         creationflags=cf,
                         close_fds=True,
                         stdin=subprocess.DEVNULL,
@@ -131,6 +140,7 @@ def schedule_restart_after_update() -> None:
                 subprocess.Popen(
                     [python_exe, str(helper), str(pid), python_exe, str(server_py), cwd],
                     cwd=cwd,
+                    env=env_helper,
                     start_new_session=True,
                     close_fds=True,
                     stdin=subprocess.DEVNULL,
@@ -216,7 +226,10 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
                 if want_ps_restart:
                     schedule_restart_after_update()
                     restart_scheduled = True
-                    lines.append("Перезапуск MCP запланирован (~2.5 с + helper mcp_restart_after_update.py).")
+                    lines.append(
+                        "Перезапуск MCP запланирован (~2.5 с + helper mcp_restart_after_update.py). "
+                        "Журнал helper: logs/mcp_restart_helper.log (или MCP_RESTART_LOG); stderr нового процесса: logs/mcp_server_stderr.log."
+                    )
                 else:
                     lines.append("Перезапустите процесс MCP вручную, чтобы подтянуть новые .py.")
                 return True, "\n".join(lines), restart_scheduled
@@ -266,7 +279,9 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
         if _restart_after_update_enabled():
             schedule_restart_after_update()
             restart_scheduled = True
-            lines.append("Перезапуск процесса MCP запланирован (через ~2 с).")
+            lines.append(
+                "Перезапуск процесса MCP запланирован (через ~2 с). См. logs/mcp_restart_helper.log и logs/mcp_server_stderr.log."
+            )
         else:
             lines.append(
                 "Перезапустите процесс MCP на Windows вручную, чтобы подтянуть новый код, если менялись .py файлы."

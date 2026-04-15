@@ -81,7 +81,8 @@ Markdown-промпт для чата: **`scripts/run_lep_scenario.py`**. Оди
 | `MCP_STATELESS_HTTP` | `1` / `true` — stateless-режим (масштабирование) |
 | `MCP_REPO_ROOT` | Явный корень git для **`server_update`**. Обычно **не нужен** при **`git clone`** [map_win_server_clicker](https://github.com/GreenEngine/map_win_server_clicker) (корень репо = папка сервера). См. [docs/GIT_SETUP.md](docs/GIT_SETUP.md). |
 | `MCP_ALLOW_SELF_UPDATE` | **`1`** / **`true`** — разрешить **`server_update`**. Если переменная **не задана или пустая**, при старте **`src\server.py`** подставляется **`1`**. Отключить: **`0`**, **`false`**, **`no`**. Скрипт **`run_local.ps1`** без **`-NoSelfUpdate`** ведёт себя так же. |
-| `MCP_RESTART_AFTER_UPDATE` | **`1`** / **`true`** (по умолчанию) — после успешного **`server_update`** запланировать автоперезапуск MCP. На Windows используется `powershell Start-Process` с задержкой (чтобы старый процесс успел освободить порт), затем старый процесс завершаетcя `os._exit(0)`. На non-Windows используется helper `scripts/mcp_restart_after_update.py`. Отключить: **`0`**, **`false`**, **`no`** — тогда перезапуск только вручную. |
+| `MCP_RESTART_AFTER_UPDATE` | **`1`** / **`true`** (по умолчанию) — после успешного **`server_update`** запланировать автоперезапуск MCP. Helper [`scripts/mcp_restart_after_update.py`](scripts/mcp_restart_after_update.py): ждёт PID, **ждёт освобождения порта**, до **3** попыток `Popen`; логи — **`logs/mcp_restart_helper.log`**, stderr нового процесса — **`logs/mcp_server_stderr.log`**. Отключить: **`0`**, **`false`**, **`no`**. |
+| `MCP_RESTART_LOG` | (Опционально) Полный путь к файлу журнала helper перезапуска; иначе **`logs/mcp_restart_helper.log`** под каталогом сервера. |
 | `MCP_ALLOW_LAUNCH` | Выставляется **`server.py`** при старте: **`1`**, если не задан **`MCP_BLOCK_LAUNCH=1`**. Внешнее **`MCP_ALLOW_LAUNCH=0`** из планировщика больше не блокирует запуск. Запрет: **`MCP_BLOCK_LAUNCH=1`**. |
 | `MCP_BLOCK_LAUNCH` | **`1`** / **`true`** — отключить **`launch_process`**. |
 | `MCP_NANOCAD_EXE` | Полный путь к **`nCAD.exe`**, если **`AUTO_NANOCAD`** не находит установку (нестандартная папка). |
@@ -99,6 +100,10 @@ Markdown-промпт для чата: **`scripts/run_lep_scenario.py`**. Оди
 | `MCP_UPDATE_USE_PS1` | На **Windows** при старте **`server.py`**, если переменная **не задана**, подставляется **`1`**: **`server_update`** вызывает PowerShell [scripts/update_server.ps1](scripts/update_server.ps1) (только **git pull** + **pip** в venv). Перезапуск процесса MCP остаётся в Python-коде `update.schedule_restart_after_update` (Windows: delayed `Start-Process`; non-Windows: helper). Отключить PS1-путь: **`0`** / **`false`** / **`no`**. |
 | `MCP_AUTH_TOKEN` | (Опционально) если позже добавите reverse-proxy с проверкой Bearer — см. ниже. |
 | `MCP_PYTHON` | Полный путь к `python.exe` для [scripts/setup_local.ps1](scripts/setup_local.ps1), если `python` не в PATH. |
+
+## Автозапуск после обновления и «служба»
+
+Классическая служба Windows под **LocalSystem** часто **не подходит** для UIA с nanoCAD на пользовательском столе. Рекомендации, логи перезапуска и скрипт планировщика при входе: **[docs/WINDOWS_AUTOSTART.md](docs/WINDOWS_AUTOSTART.md)** и **[scripts/Register-LepMcpLogonTask.ps1](scripts/Register-LepMcpLogonTask.ps1)**.
 
 ## Запуск
 
