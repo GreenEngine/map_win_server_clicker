@@ -40,6 +40,27 @@ cd C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker
 
 [Non-Sucking Service Manager (NSSM)](https://nssm.cc/) оборачивает `python.exe …\src\server.py` в службу. Обязательно укажите **учётную запись того же пользователя**, под которым открывают nanoCAD, и отметьте взаимодействие с рабочим столом (зависит от версии Windows / политик). Иначе UIA снова будет «пустым».
 
+## Сторож MCP (отдельный процесс, перезапуск при «мёртвом» порте)
+
+Если сервер **завис**, но процесс ещё жив, проверка **TCP на 127.0.0.1** может оставаться успешной — тогда сторож **не** перезапустит (это ограничение «порта как пробы»). Для типичного случая **процесс умер / порт не слушается** — достаточно.
+
+Скрипт [`scripts/McpWatchdog.ps1`](../scripts/McpWatchdog.ps1):
+
+- при запуске **без** прав администратора один раз запросит **UAC** и откроет новое окно PowerShell **от имени администратора**;
+- в цикле проверяет порт (`MCP_PORT` или **8765**); после **нескольких** подряд неудач завершает дерево процессов `python.exe`/`pythonw.exe`, у которых в командной строке есть **полный путь** к `src\server.py` **этого** клона, и снова запускает сервер (те же каталоги `.pip-cache` / `.tmp`, что и `run_local.ps1`);
+- пишет строки в **`logs/mcp_watchdog.log`** и дублирует в консоль.
+
+Пример:
+
+```powershell
+cd C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker
+powershell -ExecutionPolicy Bypass -File .\scripts\McpWatchdog.ps1 -McpRoot "C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker"
+```
+
+Параметры: `-PollSeconds`, `-Port`, `-TcpTimeoutMs`, `-PortFailThreshold` (сколько неудачных проверок порта подряд до kill+start). Окно сторожа > **один экземпляр на порт**.
+
+Чтобы сторож поднимался после входа, зарегистрируйте вторую задачу планировщика (аналогично `Register-LepMcpLogonTask.ps1`): действие — `powershell.exe -ExecutionPolicy Bypass -File "...\scripts\McpWatchdog.ps1" -SkipElevation -McpRoot "..."` (для задачи уже под админом можно сразу `-SkipElevation`).
+
 ## Ручной перезапуск
 
 Остановить процесс `python … server.py`, из каталога `windows-mcp-server` с активированным venv:
