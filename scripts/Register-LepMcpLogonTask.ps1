@@ -12,6 +12,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "Elevation required: run PowerShell as Administrator (Run as administrator), then run this script again. Register-ScheduledTask with RunLevel Highest returns 0x80070005 Access denied without admin."
+}
+
 $McpRoot = $McpRoot.Trim().TrimEnd('\').TrimEnd('/')
 
 if (-not (Test-Path -LiteralPath $McpRoot)) {
@@ -52,6 +58,7 @@ $Settings = New-ScheduledTaskSettingsSet `
     -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero)
 
-Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force -ErrorAction Stop | Out-Null
+Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
 Write-Host "OK: registered task '$TaskName' (AtLogOn user=$env:USERNAME RestartCount=3)."
 Write-Host "Check: Get-ScheduledTask -TaskName '$TaskName' | Get-ScheduledTaskInfo"

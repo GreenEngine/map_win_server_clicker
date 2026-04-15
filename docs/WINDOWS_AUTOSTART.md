@@ -17,7 +17,7 @@
 
 ## Рекомендуемый вариант: задача планировщика при входе пользователя
 
-Скрипт (запуск **от администратора** при необходимости; **`-McpRoot`** — каталог **клона**, где лежат `src\` и `.venv\`, например `C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker`, а не опечатка `map_min_server_clicker`):
+Скрипт (**обязательно PowerShell от имени администратора** — иначе `Register-ScheduledTask` даст **Access denied / 0x80070005** из‑за `RunLevel Highest`); **`-McpRoot`** — каталог **клона**, где лежат `src\` и `.venv\`, например `C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker`, а не опечатка `map_min_server_clicker`):
 
 [`scripts/Register-LepMcpLogonTask.ps1`](../scripts/Register-LepMcpLogonTask.ps1)
 
@@ -27,6 +27,8 @@ cd C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker
 ```
 
 Если PowerShell выдаёт **ParserError** с «кракозябрами» (например `Ð...`) и ссылается на строки вроде 37/68 с русским текстом в ошибке — на диске **старая копия** скрипта (UTF-8 без BOM и кириллица читались как ANSI). В каталоге клона выполните **`git pull`**, откройте `scripts\Register-LepMcpLogonTask.ps1` и проверьте, что это **короткий** файл (~58 строк), сообщения об ошибках **на английском**, файл сохранён как **UTF-8 с BOM**.
+
+Если видите **`Register-ScheduledTask : Access is denied`** (HRESULT **0x80070005**) — запустите **Windows PowerShell** или **Terminal** через контекстное меню **«Запуск от имени администратора»** и снова выполните скрипт. Сообщение **OK** после ошибки в старых версиях скрипта было вводящим в заблуждение; в актуальной версии при отказе в доступе скрипт завершается сразу после неудачной регистрации.
 
 - Триггер: **вход в систему** выбранного пользователя.
 - Поведение: **только при входе пользователя** (не «в фоне без входа») — сохраняется доступ к столу для UIA.
