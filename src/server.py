@@ -93,7 +93,7 @@ _mcp_ra = os.environ.get("MCP_RESTART_AFTER_UPDATE")
 if _mcp_ra is None or str(_mcp_ra).strip() == "":
     os.environ["MCP_RESTART_AFTER_UPDATE"] = "1"
 
-# На Windows по умолчанию git/pip через scripts/update_server.ps1 + перезапуск из PS (см. update.py). Отключить: MCP_UPDATE_USE_PS1=0.
+# На Windows по умолчанию pip через scripts/update_server.ps1 (SkipGit); git для git_pull/full — в update.py. Отключить PS1: MCP_UPDATE_USE_PS1=0.
 if sys.platform == "win32":
     _mcp_ps1 = os.environ.get("MCP_UPDATE_USE_PS1")
     if _mcp_ps1 is None or str(_mcp_ps1).strip() == "":
@@ -160,9 +160,11 @@ def server_info(client_request_id: str | None = None) -> str:
 
 @mcp.tool()
 @tool_log_decorator("server_update")
-def server_update(mode: str = "pip", client_request_id: str | None = None) -> str:
+def server_update(mode: str = "full", client_request_id: str | None = None) -> str:
     """
-    Обновление: pip / git_pull / full. Требует MCP_ALLOW_SELF_UPDATE=1.
+    Обновление: pip (только зависимости) / git_pull / full. Требует MCP_ALLOW_SELF_UPDATE=1.
+    По умолчанию **full** — полный git (fetch + pull --ff-only origin/<ветка>) + pip; без аргумента не остаётесь на «только pip».
+    Режимы git_pull и full: сначала git в Python; на Windows при MCP_UPDATE_USE_PS1=1 pip идёт через update_server.ps1 (-SkipGit).
     По умолчанию фоновое (data.update_async): ответ сразу, git/pip в потоке, итог в logs/mcp_self_update.log.
     Синхронно: MCP_UPDATE_SYNC=1. При ошибке ok=false, code=ERR_UPDATE.
     """

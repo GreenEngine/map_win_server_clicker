@@ -12,7 +12,7 @@ from typing import Any
 from src.protocol import err_json, ok_json, parse_request_id
 
 # Меняйте при доработке модалок / send_keys — смотрите agent_session.uia_tools_revision.
-UIA_TOOLS_REVISION = "2026-04-15-capture-pick-main-ncad-v1"
+UIA_TOOLS_REVISION = "2026-04-15-capture-pick-main-ncad-v2"
 
 
 def _modal_poll_sec() -> float:
@@ -343,7 +343,13 @@ def _pick_largest_mainlike_window(app: Any) -> Any:
             return 0
 
     best = max(wins, key=rank)
-    best.wait("exists", timeout=2)
+    # Элементы из app.windows() бывают UIAWrapper без метода wait (в отличие от top_window()).
+    try:
+        wa = getattr(best, "wait", None)
+        if callable(wa):
+            wa("exists", timeout=2)
+    except Exception:
+        pass
     return best
 
 

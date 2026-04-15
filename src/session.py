@@ -37,7 +37,7 @@ def agent_session_payload() -> dict[str, Any]:
         {"name": "server_info", "role": "краткая версия/git/python"},
         {
             "name": "server_update",
-            "role": "обновление pip/git; только при MCP_ALLOW_SELF_UPDATE=1; по умолчанию фоном (data.update_async) — ответ сразу, лог logs/mcp_self_update.log; синхронно: MCP_UPDATE_SYNC=1",
+            "role": "обновление pip/git; только при MCP_ALLOW_SELF_UPDATE=1; по умолчанию режим full (git+pip); явно mode=pip — только pip; git_pull/full: git в Python, на Windows pip часто через update_server.ps1 (-SkipGit); фоном — лог logs/mcp_self_update.log; синхронно: MCP_UPDATE_SYNC=1",
         },
         {"name": "uia_list", "role": "дерево UI в JSON (data.items); смотреть data.truncated"},
         {
@@ -120,7 +120,7 @@ def agent_session_payload() -> dict[str, Any]:
         "2d) Декларативные сценарии: каталог scenarios/ + scripts/run_lep_scenario.py — промпт для агента; capture_window/capture_monitor: filename_suffix или out_path (MCP_CAPTURE_DIR).",
         "2f) Автономно на ВМ без агента: один вызов lep_run_scenario(scenario_name) — выполняет весь JSON на сервере; либо один вызов lep_run_scenario_sequence() — smoke + палитра по умолчанию; либо scripts/execute_lep_scenario_local.py в том же venv.",
         "2g) Автообновление MCP при неверной работе из‑за старого кода на ВМ: если uia_tools_revision/protocol_version не совпадают с ожидаемыми после merge "
-        "или стабильно воспроизводится исправленный в git баг — при MCP_ALLOW_SELF_UPDATE=1 и корректном MCP_REPO_ROOT вызвать server_update(mode=git_pull или full), "
+        "или стабильно воспроизводится исправленный в git баг — при MCP_ALLOW_SELF_UPDATE=1 и корректном MCP_REPO_ROOT вызвать server_update() (по умолчанию full: git+pip) или явно server_update(git_pull|full); "
         "дождаться data.restart_scheduled=true, пауза 3–10 с, снова health → agent_session (сверка ревизий), затем повторить nanocad_lep_prepare / lep_run_scenario / сценарий. "
         "Если self-update отключён — BLOCKED: обновить ВМ вручную по DEPLOY_VM_CHECKLIST.",
         "2b) LEP: перед кликами по вкладкам палитры — capture_window + capture_monitor (include_base64=true) и проверить на картинке, "

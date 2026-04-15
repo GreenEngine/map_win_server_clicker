@@ -11,6 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Версия логики self-update (для agent_session / отладки): git для git_pull|full через Python; дефолт режима — full.
+_SELF_UPDATE_LOGIC_KEY = "python-git-first-default-full-2026-04-15"
+
 
 def _server_root() -> Path:
     """Каталог пакета windows-mcp-server (рядом с src/)."""
@@ -56,6 +59,7 @@ def server_version_dict() -> dict[str, Any]:
         "python": sys.version.split()[0],
         "platform": sys.platform,
         "git_short": rev or None,
+        "self_update_logic": _SELF_UPDATE_LOGIC_KEY,
         "summary": f"windows-mcp-server root={srv}; python={sys.version.split()[0]}; git={rev or 'n/a'}",
     }
 
@@ -249,7 +253,69 @@ def _update_sync_requested() -> bool:
     return os.environ.get("MCP_UPDATE_SYNC", "").strip().lower() in ("1", "true", "yes")
 
 
-def _run_self_update_impl(mode: str = "pip") -> tuple[bool, str, bool]:
+def _normalize_self_update_mode(mode: str | None) -> tuple[str, str | None]:
+    """
+    Режимы: pip | git_pull | full.
+    Пустой аргумент → full (git fetch + pull --ff-only origin/<ветка> + pip).
+    Синонимы полного цикла: git_full, git-full, gitfull, all → full.
+    """
+    raw = (mode or "").strip().lower()
+    if not raw:
+        return "full", None
+    aliases = {
+        "git_full": "full",
+        "git-full": "full",
+        "gitfull": "full",
+        "all": "full",
+    }
+    out = aliases.get(raw, raw)
+    if out in ("pip", "git_pull", "full"):
+        return out, None
+    return (
+        "",
+        f"Неизвестный режим server_update: {mode!r}. Допустимо: pip, git_pull, full (синонимы полного git+pip: git_full, all).",
+    )
+
+
+def _git_fetch_pull_ff_only(root: Path, lines: list[str], run) -> None:
+    """fetch origin + pull --ff-only на явную ветку origin/<name> (как у удалённого), без слабого голого pull."""
+    git_dir = root / ".git"
+    if not git_dir.exists():
+        lines.append(f"Пропуск git pull: нет {git_dir}")
+        return
+    run(["git", "fetch", "origin"], cwd=root)
+    branch_probe = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    branch = (branch_probe.stdout or "").strip() or "main"
+
+    def _has_origin_ref(ref_name: str) -> bool:
+        chk = subprocess.run(
+            ["git", "show-ref", "--verify", f"refs/remotes/origin/{ref_name}"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        return chk.returncode == 0
+
+    target = branch if _has_origin_ref(branch) else ""
+    if not target and _has_origin_ref("main"):
+        target = "main"
+    if not target and _has_origin_ref("master"):
+        target = "master"
+
+    if target:
+        run(["git", "pull", "--ff-only", "origin", target], cwd=root)
+    else:
+        run(["git", "pull", "--ff-only"], cwd=root)
+
+
+def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
     """
     Синхронное обновление (долгий git/pip). Вызывать из фонового потока по умолчанию.
     Returns: (success, log_text, restart_scheduled)
@@ -286,83 +352,59 @@ def _run_self_update_impl(mode: str = "pip") -> tuple[bool, str, bool]:
         if p.returncode != 0:
             raise RuntimeError(f"exit {p.returncode}")
 
-    mode_l = (mode or "pip").lower().strip()
+    mode_l, mode_err = _normalize_self_update_mode(mode)
+    if mode_err:
+        return False, mode_err, False
     try:
-        if (
-            sys.platform == "win32"
-            and os.environ.get("MCP_UPDATE_USE_PS1", "").strip().lower() not in ("0", "false", "no")
+        use_ps1 = False
+        ps1 = _server_root() / "scripts" / "update_server.ps1"
+        if sys.platform == "win32" and os.environ.get("MCP_UPDATE_USE_PS1", "").strip().lower() not in (
+            "0",
+            "false",
+            "no",
         ):
-            ps1 = _server_root() / "scripts" / "update_server.ps1"
             if ps1.is_file():
-                cmd = [
-                    "powershell",
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(ps1),
-                    "-RepoRoot",
-                    str(root),
-                ]
-                if mode_l == "pip":
-                    cmd.append("-SkipGit")
-                want_ps_restart = _restart_after_update_enabled()
-                run(cmd, cwd=_server_root())
-                lines.append("Скрипт update_server.ps1 выполнен (git/pip). Перезапуск процесса — из Python.")
-                joined = "\n".join(lines)
-                if want_ps_restart and _needs_process_restart_after_update(joined, mode_l):
-                    schedule_restart_after_update()
-                    restart_scheduled = True
-                    lines.append(
-                        "Перезапуск MCP запланирован (~2.5 с + helper mcp_restart_after_update.py). "
-                        "Журнал helper: logs/mcp_restart_helper.log (или MCP_RESTART_LOG); stderr нового процесса: logs/mcp_server_stderr.log."
-                    )
-                elif want_ps_restart:
-                    lines.append(
-                        "Перезапуск пропущен: git/pip не сообщили об изменениях (уже актуально). "
-                        "Принудительный перезапуск: MCP_RESTART_AFTER_UPDATE_ALWAYS=1."
-                    )
-                else:
-                    lines.append("Перезапустите процесс MCP вручную, чтобы подтянуть новые .py.")
-                return True, "\n".join(lines), restart_scheduled
-            lines.append(f"Нет скрипта {ps1}, выполняем встроенное обновление…")
+                use_ps1 = True
+            else:
+                lines.append(f"Нет скрипта {ps1}, выполняем встроенное обновление…")
 
         if mode_l in ("git_pull", "full"):
-            git_dir = root / ".git"
-            if git_dir.exists():
-                run(["git", "fetch", "origin"], cwd=root)
-                branch_probe = subprocess.run(
-                    ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                    cwd=str(root),
-                    capture_output=True,
-                    text=True,
-                    timeout=20,
+            _git_fetch_pull_ff_only(root, lines, run)
+
+        if use_ps1:
+            cmd = [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ps1),
+                "-RepoRoot",
+                str(root),
+                "-SkipGit",
+            ]
+            want_ps_restart = _restart_after_update_enabled()
+            run(cmd, cwd=_server_root())
+            lines.append(
+                "Скрипт update_server.ps1: только pip (venv при наличии); git для режимов git_pull/full "
+                "выполняется в Python (git fetch + pull --ff-only origin/<ветка>)."
+            )
+            joined = "\n".join(lines)
+            if want_ps_restart and _needs_process_restart_after_update(joined, mode_l):
+                schedule_restart_after_update()
+                restart_scheduled = True
+                lines.append(
+                    "Перезапуск MCP запланирован (~2.5 с + helper mcp_restart_after_update.py). "
+                    "Журнал helper: logs/mcp_restart_helper.log (или MCP_RESTART_LOG); stderr нового процесса: logs/mcp_server_stderr.log."
                 )
-                branch = (branch_probe.stdout or "").strip() or "main"
-
-                def _has_origin_ref(ref_name: str) -> bool:
-                    chk = subprocess.run(
-                        ["git", "show-ref", "--verify", f"refs/remotes/origin/{ref_name}"],
-                        cwd=str(root),
-                        capture_output=True,
-                        text=True,
-                        timeout=20,
-                    )
-                    return chk.returncode == 0
-
-                target = branch if _has_origin_ref(branch) else ""
-                if not target and _has_origin_ref("main"):
-                    target = "main"
-                if not target and _has_origin_ref("master"):
-                    target = "master"
-
-                if target:
-                    run(["git", "pull", "--ff-only", "origin", target], cwd=root)
-                else:
-                    # Редкий случай нетипичного remote layout.
-                    run(["git", "pull", "--ff-only"], cwd=root)
+            elif want_ps_restart:
+                lines.append(
+                    "Перезапуск пропущен: git/pip не сообщили об изменениях (уже актуально). "
+                    "Принудительный перезапуск: MCP_RESTART_AFTER_UPDATE_ALWAYS=1."
+                )
             else:
-                lines.append(f"Пропуск git pull: нет {git_dir}")
+                lines.append("Перезапустите процесс MCP вручную, чтобы подтянуть новые .py.")
+            return True, "\n".join(lines), restart_scheduled
 
         if mode_l in ("pip", "full", "git_pull"):
             run([sys.executable, "-m", "pip", "install", "-r", str(req)])
@@ -400,10 +442,12 @@ def _self_update_worker(mode: str) -> None:
             _self_update_state["running"] = False
 
 
-def run_self_update(mode: str = "pip") -> tuple[bool, str, bool, bool]:
+def run_self_update(mode: str | None = "full") -> tuple[bool, str, bool, bool]:
     """
     Returns:
         (success, log_text, restart_scheduled, update_async)
+
+    Режим по умолчанию: **full** (git fetch + pull --ff-only origin/<ветка> + pip). Только pip: mode=pip.
 
     По умолчанию (без MCP_UPDATE_SYNC=1): сразу возвращает успех с коротким log,
     реальное git/pip и перезапуск выполняются в фоне — HTTP server_update не висит минутами.
@@ -416,8 +460,12 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool, bool]:
             False,
         )
 
+    mode_n, mode_err = _normalize_self_update_mode(mode)
+    if mode_err:
+        return False, mode_err, False, False
+
     if _update_sync_requested():
-        ok, text, rs = _run_self_update_impl(mode)
+        ok, text, rs = _run_self_update_impl(mode_n)
         return ok, text, rs, False
 
     with _self_update_state["lock"]:
@@ -430,10 +478,10 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool, bool]:
             )
         _self_update_state["running"] = True
 
-    threading.Thread(target=_self_update_worker, args=(mode,), daemon=True).start()
+    threading.Thread(target=_self_update_worker, args=(mode_n,), daemon=True).start()
     log_path = _self_update_log_path()
     brief = (
-        f"Queued background server_update (mode={mode}). "
+        f"Queued background server_update (mode={mode_n}). "
         f"MCP stays up during git/pip; process restarts only if git/pip reported changes "
         f"(else no os._exit; force always: MCP_RESTART_AFTER_UPDATE_ALWAYS=1). "
         f"Full log: {log_path}. "

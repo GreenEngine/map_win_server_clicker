@@ -118,6 +118,6 @@ def lep_qa_catalog_payload() -> dict[str, Any]:
             "windows_track": "Каждый приёмочный прогон nanoCAD через MCP считать отдельным шагом; вести windows_run_index..windows_run_max (по умолчанию 30 в product-delivery; см. .cursor/skills/product-delivery/SKILL.md).",
             "autonomy_goal": "Автономность = закрытие сценариев без ручных кликов в CAD (кроме блокеров: NETLOAD, RDP без framebuffer).",
             "autonomous_batch": "На ВМ: (1) MCP lep_run_scenario_sequence() — один вызов, по умолчанию smoke + полная палитра; (2) MCP lep_run_scenario(имя.json) — один сценарий; (3) execute_lep_scenario_local.py — локально в venv; Планировщик заданий в пользовательской сессии.",
-            "mcp_self_heal_on_connected_server": "Подключённый MCP: при расхождении uia_tools_revision с репо или при подозрении на старый server.py — server_update(git_pull|full) при MCP_ALLOW_SELF_UPDATE=1 и MCP_REPO_ROOT; после data.restart_scheduled — пауза, health, agent_session, затем повтор UI-прогона. Иначе ручной деплой (DEPLOY_VM_CHECKLIST).",
+            "mcp_self_heal_on_connected_server": "Подключённый MCP: при расхождении uia_tools_revision с репо или при подозрении на старый server.py — server_update() (по умолчанию full: git+pip) или server_update(git_pull|full); только зависимости без git — server_update(pip). При MCP_ALLOW_SELF_UPDATE=1 и MCP_REPO_ROOT; после data.restart_scheduled — пауза, health, agent_session, затем повтор UI-прогона. Иначе ручной деплой (DEPLOY_VM_CHECKLIST).",
         },
     }

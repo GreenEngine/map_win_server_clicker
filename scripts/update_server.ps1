@@ -1,4 +1,5 @@
-# Обновление MCP на Windows: git pull (опционально) + pip install.
+# Обновление MCP на Windows: git (опционально, см. ниже) + pip install.
+# Из server_update на Windows скрипт вызывается с -SkipGit: git для git_pull/full делает Python (fetch + pull --ff-only origin/<ветка>).
 # Вызывается вручную или из server_update при MCP_ALLOW_SELF_UPDATE=1.
 #
 # Параметры:
@@ -35,7 +36,19 @@ Write-Host "Repo root: $RepoRoot"
 if (-not $SkipGit -and (Test-Path (Join-Path $RepoRoot ".git"))) {
     Push-Location $RepoRoot
     try {
-        git pull --ff-only
+        git fetch origin
+        $branch = (git rev-parse --abbrev-ref HEAD).Trim()
+        if (-not $branch) { $branch = "main" }
+        $target = ""
+        foreach ($b in @($branch, "main", "master")) {
+            git show-ref --verify "refs/remotes/origin/$b" 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) { $target = $b; break }
+        }
+        if ($target) {
+            git pull --ff-only origin $target
+        } else {
+            git pull --ff-only
+        }
     }
     finally {
         Pop-Location

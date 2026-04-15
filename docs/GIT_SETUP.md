@@ -41,4 +41,4 @@ git push origin main:master
 
 ## Обновление только зависимостей
 
-Инструмент **`server_update`** с режимом **`pip`** — без `git pull`.
+Инструмент **`server_update`** с явным режимом **`pip`** — без `git pull`. Без аргумента или с **`full`** — полный git + pip (см. README).
