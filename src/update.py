@@ -68,6 +68,68 @@ def _restart_after_update_enabled() -> bool:
     return True
 
 
+def _restart_after_update_always() -> bool:
+    """Принудительный перезапуск после каждого успешного server_update (старое поведение)."""
+    return os.environ.get("MCP_RESTART_AFTER_UPDATE_ALWAYS", "").strip().lower() in ("1", "true", "yes")
+
+
+def _pip_reported_changes(log_lower: str) -> bool:
+    return any(
+        s in log_lower
+        for s in (
+            "successfully installed",
+            "installing collected packages",
+            "attempting uninstall",
+            " upgrading ",
+        )
+    )
+
+
+def _git_reported_changes(log_lower: str) -> bool:
+    """Признаки того, что git pull реально подтянул коммиты."""
+    return any(
+        s in log_lower
+        for s in (
+            "fast-forward",
+            " files changed, ",
+            " file changed, ",
+            "insertions(+)",
+            "updating ",
+            " merge ",
+        )
+    )
+
+
+def _git_reported_already_current(log_lower: str) -> bool:
+    return (
+        "already up to date" in log_lower
+        or "already up-to-date" in log_lower
+        or "уже актуальн" in log_lower
+    )
+
+
+def _needs_process_restart_after_update(log_text: str, mode_l: str) -> bool:
+    """
+    Не дергать os._exit, если git/pip ничего не меняли — меньше простоя и меньше шанс,
+    что helper не поднимет новый процесс, пока клиенты ещё держат соединения.
+
+    Принудительно как раньше: MCP_RESTART_AFTER_UPDATE_ALWAYS=1.
+    """
+    if _restart_after_update_always():
+        return True
+    t = (log_text or "").lower()
+    pip_changed = _pip_reported_changes(t)
+    ml = (mode_l or "pip").lower().strip()
+    if ml == "pip":
+        return pip_changed
+    if _git_reported_changes(t):
+        return True
+    if _git_reported_already_current(t) and not pip_changed:
+        return False
+    # Непонятный вывод git — безопаснее перезапустить.
+    return True
+
+
 def schedule_restart_after_update() -> None:
     """
     Через ~1.5 с после ответа клиенту: старт `scripts/mcp_restart_after_update.py`, затем os._exit(0).
@@ -247,12 +309,18 @@ def _run_self_update_impl(mode: str = "pip") -> tuple[bool, str, bool]:
                 want_ps_restart = _restart_after_update_enabled()
                 run(cmd, cwd=_server_root())
                 lines.append("Скрипт update_server.ps1 выполнен (git/pip). Перезапуск процесса — из Python.")
-                if want_ps_restart:
+                joined = "\n".join(lines)
+                if want_ps_restart and _needs_process_restart_after_update(joined, mode_l):
                     schedule_restart_after_update()
                     restart_scheduled = True
                     lines.append(
                         "Перезапуск MCP запланирован (~2.5 с + helper mcp_restart_after_update.py). "
                         "Журнал helper: logs/mcp_restart_helper.log (или MCP_RESTART_LOG); stderr нового процесса: logs/mcp_server_stderr.log."
+                    )
+                elif want_ps_restart:
+                    lines.append(
+                        "Перезапуск пропущен: git/pip не сообщили об изменениях (уже актуально). "
+                        "Принудительный перезапуск: MCP_RESTART_AFTER_UPDATE_ALWAYS=1."
                     )
                 else:
                     lines.append("Перезапустите процесс MCP вручную, чтобы подтянуть новые .py.")
@@ -300,11 +368,17 @@ def _run_self_update_impl(mode: str = "pip") -> tuple[bool, str, bool]:
             run([sys.executable, "-m", "pip", "install", "-r", str(req)])
 
         lines.append("Готово.")
-        if _restart_after_update_enabled():
+        joined = "\n".join(lines)
+        if _restart_after_update_enabled() and _needs_process_restart_after_update(joined, mode_l):
             schedule_restart_after_update()
             restart_scheduled = True
             lines.append(
                 "Перезапуск процесса MCP запланирован (через ~2 с). См. logs/mcp_restart_helper.log и logs/mcp_server_stderr.log."
+            )
+        elif _restart_after_update_enabled():
+            lines.append(
+                "Перезапуск пропущен: git/pip не сообщили об изменениях. "
+                "Принудительно: MCP_RESTART_AFTER_UPDATE_ALWAYS=1."
             )
         else:
             lines.append(
@@ -360,8 +434,9 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool, bool]:
     log_path = _self_update_log_path()
     brief = (
         f"Queued background server_update (mode={mode}). "
-        f"MCP stays up until git/pip finish; then restart helper runs as before (~2.5s delay). "
+        f"MCP stays up during git/pip; process restarts only if git/pip reported changes "
+        f"(else no os._exit; force always: MCP_RESTART_AFTER_UPDATE_ALWAYS=1). "
         f"Full log: {log_path}. "
-        f"Synchronous mode (blocks until done): set MCP_UPDATE_SYNC=1."
+        f"Blocking mode: MCP_UPDATE_SYNC=1."
     )
-    return True, brief, True, True
+    return True, brief, False, True
