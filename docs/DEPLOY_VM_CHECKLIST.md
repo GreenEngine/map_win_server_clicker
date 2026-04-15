@@ -13,7 +13,7 @@
 
 ## 2. Перезапуск MCP
 
-- После **merge** на Mac: на ВМ через агент вызвать **`server_update`** с режимом **`git_pull`** или **`full`** при **`MCP_ALLOW_SELF_UPDATE=1`**. На Windows по умолчанию обновление идёт через **PowerShell** [scripts/update_server.ps1](../scripts/update_server.ps1); в конце скрипт при **`MCP_RESTART_AFTER_UPDATE=1`** (по умолчанию) стартует **`mcp_restart_after_update.py`** — дождитесь **`data.restart_scheduled`: true** и паузы **3–10 с**, затем снова **`health`** → **`agent_session`** (сверка `uia_tools_revision`). Иначе процесс останется на старом коде.
+- После **merge** на Mac: на ВМ через агент вызвать **`server_update`** с режимом **`git_pull`** или **`full`** при **`MCP_ALLOW_SELF_UPDATE=1`**. На Windows по умолчанию **git/pip** идут через **PowerShell** [scripts/update_server.ps1](../scripts/update_server.ps1); перезапуск процесса MCP планирует **Python** (`schedule_restart_after_update` → **`mcp_restart_after_update.py`**). Дождитесь **`data.restart_scheduled`: true** и паузы **3–10 с**, затем снова **`health`** → **`agent_session`** (сверка `uia_tools_revision`). Если процесс не ушёл — смотрите stderr процесса MCP (там будет текст при сбое запуска helper).
 - Если **`MCP_UPDATE_USE_PS1=0`** — обновление только встроенным Python-путём, перезапуск по-прежнему через тот же helper из **`update.py`** (или вручную).
 - Вручную на ВМ: остановить `python … src\server.py`, снова запустить из venv (см. [README.md](../README.md)).
 

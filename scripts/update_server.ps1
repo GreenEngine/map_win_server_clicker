@@ -4,17 +4,16 @@
 # Параметры:
 #   -RepoRoot       корень git (по умолчанию: .git внутри windows-mcp-server, иначе .git у родителя — монорепо)
 #   -SkipGit        не выполнять git pull
-#   -McpParentPid   PID текущего процесса MCP (передаёт server_update); если > 0 — после pip стартует перезапуск
-#   -PythonExe      интерпретатор Python для mcp_restart_after_update.py (тот же, что у процесса MCP)
+#
+# Перезапуск процесса MCP после обновления выполняет Python (update.schedule_restart_after_update),
+# а не этот скрипт — так надёжнее на всех вариантах запуска Cursor/venv.
 #
 # Пример:
 #   powershell -ExecutionPolicy Bypass -File scripts/update_server.ps1 -RepoRoot D:\LEP
 
 param(
     [string]$RepoRoot = "",
-    [switch]$SkipGit = $false,
-    [int]$McpParentPid = 0,
-    [string]$PythonExe = ""
+    [switch]$SkipGit = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -62,26 +61,4 @@ else {
     python -m pip install -r $req
 }
 
-$mcpRootPath = if ($mcpRoot.Path) { $mcpRoot.Path } else { "$mcpRoot" }
-$helper = Join-Path $mcpRootPath "scripts\mcp_restart_after_update.py"
-$serverPy = Join-Path $mcpRootPath "src\server.py"
-
-if ($McpParentPid -gt 0 -and $PythonExe -and (Test-Path $helper) -and (Test-Path $serverPy)) {
-    Write-Host "Starting MCP restart helper (parent PID $McpParentPid) via PowerShell..."
-    try {
-        Start-Process `
-            -FilePath $PythonExe `
-            -ArgumentList @($helper, "$McpParentPid", $PythonExe, $serverPy, $mcpRootPath) `
-            -WorkingDirectory $mcpRootPath `
-            -WindowStyle Hidden `
-            -ErrorAction Stop
-        Write-Host "Restart helper started; MCP parent process should exit shortly (see server_update log)."
-    }
-    catch {
-        Write-Error "Failed to start MCP restart helper: $_"
-        throw
-    }
-}
-else {
-    Write-Host "Done. Restart the MCP server process manually to load new Python files (no -McpParentPid/-PythonExe or helper missing)."
-}
+Write-Host "Done. MCP process restart is scheduled by server_update (Python), not by this script."

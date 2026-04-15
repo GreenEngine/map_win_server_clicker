@@ -67,22 +67,6 @@ def _restart_after_update_enabled() -> bool:
     return True
 
 
-def schedule_parent_exit_only(delay_sec: float = 2.5) -> None:
-    """
-    Только завершить текущий процесс MCP после паузы (ответ клиенту успевает уйти).
-    Используется, когда перезапуск уже инициирован извне (например update_server.ps1).
-    """
-
-    def _exit_only() -> None:
-        try:
-            time.sleep(float(delay_sec))
-            os._exit(0)
-        except Exception:
-            pass
-
-    threading.Thread(target=_exit_only, daemon=True).start()
-
-
 def schedule_restart_after_update() -> None:
     """
     Через ~1.5 с после ответа клиенту: старт `scripts/mcp_restart_after_update.py`, затем os._exit(0).
@@ -101,12 +85,15 @@ def schedule_restart_after_update() -> None:
     cwd = str(srv)
 
     def _restart() -> None:
+        ok_spawn = False
         try:
-            time.sleep(2.0)
+            # Дать клиенту получить JSON-ответ server_update до выхода процесса.
+            time.sleep(2.5)
             cf = 0
             if sys.platform == "win32":
                 cf = int(getattr(subprocess, "DETACHED_PROCESS", 0x00000008))
                 cf |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
+                cf |= int(getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
             subprocess.Popen(
                 [python_exe, str(helper), str(pid), python_exe, str(server_py), cwd],
                 cwd=cwd,
@@ -118,9 +105,19 @@ def schedule_restart_after_update() -> None:
                 stderr=subprocess.DEVNULL,
             )
             time.sleep(0.5)
-            os._exit(0)
-        except Exception:
-            pass
+            ok_spawn = True
+        except Exception as e:
+            # Раньше except: pass скрывал сбой Popen — процесс не завершался, новый код не подхватывался.
+            try:
+                sys.stderr.write(f"mcp_restart_after_update spawn failed: {e!r}\n")
+                sys.stderr.flush()
+            except Exception:
+                pass
+        if ok_spawn:
+            try:
+                os._exit(0)
+            except Exception:
+                os._exit(1)
 
     threading.Thread(target=_restart, daemon=True).start()
 
@@ -183,29 +180,12 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
                 if mode_l == "pip":
                     cmd.append("-SkipGit")
                 want_ps_restart = _restart_after_update_enabled()
-                helper = srv / "scripts" / "mcp_restart_after_update.py"
-                server_py = srv / "src" / "server.py"
-                if want_ps_restart and helper.is_file() and server_py.is_file():
-                    cmd.extend(
-                        [
-                            "-McpParentPid",
-                            str(os.getpid()),
-                            "-PythonExe",
-                            sys.executable,
-                        ]
-                    )
                 run(cmd, cwd=_server_root())
-                lines.append("Скрипт update_server.ps1 выполнен.")
-                if want_ps_restart and helper.is_file() and server_py.is_file():
-                    # Перезапуск стартовал из PowerShell (Start-Process → mcp_restart_after_update.py);
-                    # здесь только корректно завершаем родительский процесс после ответа клиенту.
-                    schedule_parent_exit_only(2.5)
-                    restart_scheduled = True
-                    lines.append("Перезапуск MCP: helper из update_server.ps1; процесс сервера завершится через ~2.5 с.")
-                elif want_ps_restart:
+                lines.append("Скрипт update_server.ps1 выполнен (git/pip). Перезапуск процесса — из Python.")
+                if want_ps_restart:
                     schedule_restart_after_update()
                     restart_scheduled = True
-                    lines.append("Перезапуск процесса MCP запланирован (через ~2 с, встроенный helper).")
+                    lines.append("Перезапуск MCP запланирован (~2.5 с + helper mcp_restart_after_update.py).")
                 else:
                     lines.append("Перезапустите процесс MCP вручную, чтобы подтянуть новые .py.")
                 return True, "\n".join(lines), restart_scheduled
