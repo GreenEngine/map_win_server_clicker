@@ -4,3 +4,4 @@
 python-embed/
 __pycache__/
 *.py[cod]
+qa_agent/_last*.png
