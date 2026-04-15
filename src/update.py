@@ -14,7 +14,7 @@ from typing import Any
 # Версия логики self-update (для agent_session / отладки): git для git_pull|full через Python; дефолт режима — full.
 _SELF_UPDATE_LOGIC_KEY = "python-git-first-default-full-2026-04-15"
 # Временная метка для проверки git pull на ВМ (можно удалить после приёмки).
-_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-1"
+_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-pushtest-2"
 
 
 def _server_root() -> Path:
