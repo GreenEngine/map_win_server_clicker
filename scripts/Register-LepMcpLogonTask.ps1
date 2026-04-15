@@ -61,4 +61,5 @@ $Settings = New-ScheduledTaskSettingsSet `
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force -ErrorAction Stop | Out-Null
 Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-Null
 Write-Host "OK: registered task '$TaskName' (AtLogOn user=$env:USERNAME RestartCount=3)."
-Write-Host "Check: Get-ScheduledTask -TaskName '$TaskName' | Get-ScheduledTaskInfo"
+Write-Host "Run this line (do not copy any label before Get-ScheduledTask):"
+Write-Host "Get-ScheduledTask -TaskName '$TaskName' | Get-ScheduledTaskInfo"
