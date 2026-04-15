@@ -163,13 +163,19 @@ def server_info(client_request_id: str | None = None) -> str:
 def server_update(mode: str = "pip", client_request_id: str | None = None) -> str:
     """
     Обновление: pip / git_pull / full. Требует MCP_ALLOW_SELF_UPDATE=1.
-    Лог в data.log; при ошибке ok=false, code=ERR_UPDATE.
+    По умолчанию фоновое (data.update_async): ответ сразу, git/pip в потоке, итог в logs/mcp_self_update.log.
+    Синхронно: MCP_UPDATE_SYNC=1. При ошибке ok=false, code=ERR_UPDATE.
     """
     rid = parse_request_id(client_request_id)
-    ok, log, restart_scheduled = update_mod.run_self_update(mode)
+    ok, log, restart_scheduled, update_async = update_mod.run_self_update(mode)
     if ok:
         return ok_json(
-            data={"log": log, "mode": mode, "restart_scheduled": restart_scheduled},
+            data={
+                "log": log,
+                "mode": mode,
+                "restart_scheduled": restart_scheduled,
+                "update_async": update_async,
+            },
             message="server_update",
             request_id=rid,
         )

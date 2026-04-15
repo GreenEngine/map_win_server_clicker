@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -163,10 +164,33 @@ def schedule_restart_after_update() -> None:
     threading.Thread(target=_restart, daemon=True).start()
 
 
-def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
+_self_update_state: dict[str, Any] = {"running": False, "lock": threading.Lock()}
+
+
+def _self_update_log_path() -> Path:
+    return _server_root() / "logs" / "mcp_self_update.log"
+
+
+def _append_self_update_log(block: str) -> None:
+    path = _self_update_log_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        with path.open("a", encoding="utf-8") as f:
+            f.write(f"\n{'=' * 60}\n{ts}\n{block.rstrip()}\n")
+    except Exception:
+        pass
+
+
+def _update_sync_requested() -> bool:
+    """Старый режим: git/pip блокируют ответ server_update до конца (отладка)."""
+    return os.environ.get("MCP_UPDATE_SYNC", "").strip().lower() in ("1", "true", "yes")
+
+
+def _run_self_update_impl(mode: str = "pip") -> tuple[bool, str, bool]:
     """
-    Returns:
-        (success, log_text, restart_scheduled)
+    Синхронное обновление (долгий git/pip). Вызывать из фонового потока по умолчанию.
+    Returns: (success, log_text, restart_scheduled)
     """
     if os.environ.get("MCP_ALLOW_SELF_UPDATE", "").strip() not in ("1", "true", "True", "yes", "YES"):
         return (
@@ -289,3 +313,55 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
         return True, "\n".join(lines), restart_scheduled
     except Exception as e:
         return False, "\n".join(lines) + f"\nERROR: {e!s}", False
+
+
+def _self_update_worker(mode: str) -> None:
+    try:
+        ok, text, rs = _run_self_update_impl(mode)
+        _append_self_update_log(f"ok={ok} restart_scheduled={rs}\n{text}")
+    except Exception as e:
+        _append_self_update_log(f"ok=False restart_scheduled=False\nFATAL: {e!s}")
+    finally:
+        with _self_update_state["lock"]:
+            _self_update_state["running"] = False
+
+
+def run_self_update(mode: str = "pip") -> tuple[bool, str, bool, bool]:
+    """
+    Returns:
+        (success, log_text, restart_scheduled, update_async)
+
+    По умолчанию (без MCP_UPDATE_SYNC=1): сразу возвращает успех с коротким log,
+    реальное git/pip и перезапуск выполняются в фоне — HTTP server_update не висит минутами.
+    """
+    if os.environ.get("MCP_ALLOW_SELF_UPDATE", "").strip() not in ("1", "true", "True", "yes", "YES"):
+        return (
+            False,
+            "Self-update отключён. Установите MCP_ALLOW_SELF_UPDATE=1 и перезапустите процесс MCP.",
+            False,
+            False,
+        )
+
+    if _update_sync_requested():
+        ok, text, rs = _run_self_update_impl(mode)
+        return ok, text, rs, False
+
+    with _self_update_state["lock"]:
+        if _self_update_state["running"]:
+            return (
+                False,
+                "server_update already running in background; see logs/mcp_self_update.log",
+                False,
+                False,
+            )
+        _self_update_state["running"] = True
+
+    threading.Thread(target=_self_update_worker, args=(mode,), daemon=True).start()
+    log_path = _self_update_log_path()
+    brief = (
+        f"Queued background server_update (mode={mode}). "
+        f"MCP stays up until git/pip finish; then restart helper runs as before (~2.5s delay). "
+        f"Full log: {log_path}. "
+        f"Synchronous mode (blocks until done): set MCP_UPDATE_SYNC=1."
+    )
+    return True, brief, True, True

@@ -98,6 +98,7 @@ Markdown-промпт для чата: **`scripts/run_lep_scenario.py`**. Оди
 | `MCP_MODAL_POLL_SEC` | Интервал опроса в **`uia_modal_ok`** / **`uia_modal_titlebar_close`** (секунды, по умолчанию **0.12**; было жёстко 0.25). Допустимый диапазон 0.03…2. |
 | `MCP_SENDKEYS_MODAL_MAX_W` / `MCP_SENDKEYS_MODAL_MAX_H` | Макс. размер окна на переднем плане, чтобы **`send_keys`** считал его модалкой (**`#32770`** или **WinForms** в процессе **`nCAD.exe`**) и слал клавиши в него, а не в главное окно. По умолчанию 1400×950. |
 | `MCP_UPDATE_USE_PS1` | На **Windows** при старте **`server.py`**, если переменная **не задана**, подставляется **`1`**: **`server_update`** вызывает PowerShell [scripts/update_server.ps1](scripts/update_server.ps1) (только **git pull** + **pip** в venv). Перезапуск процесса MCP остаётся в Python-коде `update.schedule_restart_after_update` (Windows: delayed `Start-Process`; non-Windows: helper). Отключить PS1-путь: **`0`** / **`false`** / **`no`**. |
+| `MCP_UPDATE_SYNC` | **`1`** / **`true`** / **`yes`** — **`server_update`** ждёт конца git/pip в том же запросе (долго, клиент может оборвать таймаут). Иначе по умолчанию обновление **в фоновом потоке**: ответ сразу, полный вывод в **`logs/mcp_self_update.log`**, перезапуск после успеха как раньше. |
 | `MCP_AUTH_TOKEN` | (Опционально) если позже добавите reverse-proxy с проверкой Bearer — см. ниже. |
 | `MCP_PYTHON` | Полный путь к `python.exe` для [scripts/setup_local.ps1](scripts/setup_local.ps1), если `python` не в PATH. |
 
@@ -122,7 +123,7 @@ $env:MCP_REPO_ROOT="D:\LEP"
 ### Обновление сервера
 
 1. **Код** — клонируй **[map_win_server_clicker](https://github.com/GreenEngine/map_win_server_clicker)** на Windows; **`server_update`** с **`full`** делает **`git pull` + pip**. Подробно: **[docs/GIT_SETUP.md](docs/GIT_SETUP.md)**. Копирование папки без **`.git`** — только ручные обновления.
-2. **Зависимости и git из агента:** при **`MCP_ALLOW_SELF_UPDATE=1`** вызовите инструмент **`server_update`**: `pip` (только pip), `git_pull` (pull + pip), `full` (то же, что `git_pull`). При **`MCP_RESTART_AFTER_UPDATE=1`** (по умолчанию) процесс MCP **перезапустится сам** через ~2 с после ответа; в **`data.restart_scheduled`** будет **`true`**. Иначе перезапустите **`server.py`** вручную после смены **`.py`**.
+2. **Зависимости и git из агента:** при **`MCP_ALLOW_SELF_UPDATE=1`** вызовите инструмент **`server_update`**: `pip` (только pip), `git_pull` (pull + pip), `full` (то же, что `git_pull`). По умолчанию **`data.update_async`: true** — git/pip идут **в фоне**, HTTP-ответ приходит сразу; полный лог: **`logs/mcp_self_update.log`**. При **`MCP_RESTART_AFTER_UPDATE=1`** (по умолчанию) после успешного обновления процесс **перезапустится** через helper (~2.5 с); в **`data.restart_scheduled`** будет **`true`**. Ждать конца обновления в одном запросе (как раньше): **`MCP_UPDATE_SYNC=1`**. Если **`MCP_RESTART_AFTER_UPDATE=0`**, после смены **`.py`** перезапустите **`server.py`** вручную.
 3. **Вручную на Windows:** `powershell -ExecutionPolicy Bypass -File scripts\update_server.ps1 -RepoRoot <корень LEP с .git>`.
 
 Эндпоинт MCP по умолчанию: **`http://<host>:<port>/mcp`** (см. `streamable_http_path` в FastMCP).

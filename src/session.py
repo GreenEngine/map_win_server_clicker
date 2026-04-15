@@ -35,7 +35,10 @@ def agent_session_payload() -> dict[str, Any]:
             "role": "список scenarios/*.json, пути к матрице QA, порядок инструментов для полного теста LEP; вызывать после agent_session перед длинным сценарием",
         },
         {"name": "server_info", "role": "краткая версия/git/python"},
-        {"name": "server_update", "role": "обновление pip/git; только при MCP_ALLOW_SELF_UPDATE=1"},
+        {
+            "name": "server_update",
+            "role": "обновление pip/git; только при MCP_ALLOW_SELF_UPDATE=1; по умолчанию фоном (data.update_async) — ответ сразу, лог logs/mcp_self_update.log; синхронно: MCP_UPDATE_SYNC=1",
+        },
         {"name": "uia_list", "role": "дерево UI в JSON (data.items); смотреть data.truncated"},
         {
             "name": "uia_list_subtree",
