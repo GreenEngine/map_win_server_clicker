@@ -72,6 +72,8 @@ cd windows-mcp-server && PYTHONPATH=. python scripts/execute_lep_scenario_local.
 
 Markdown-промпт для чата: **`scripts/run_lep_scenario.py`**. Один вызов MCP на ВМ: **`lep_run_scenario`** (`scenario_name`, например `_template.json`).
 
+**Последовательность smoke + полный палитровый UIA** (как у **`lep_run_scenario_sequence`** по умолчанию: `lep_mcp_full_operability_smoke.json`, `lep_plugin_full_palette_uia.json`): скрипт **[scripts/run_lep_full_tabs_acceptance.py](scripts/run_lep_full_tabs_acceptance.py)** — **`--validate`** (проверка обоих JSON без сервера), **`--print-mcp-hint`** (готовый текст для вызова **`lep_run_scenario_sequence`** с `scenario_names_csv`).
+
 ## Переменные окружения
 
 | Переменная | Описание |

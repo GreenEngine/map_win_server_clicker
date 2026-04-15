@@ -47,7 +47,7 @@
 
 ## Расширенный UI-прогон палитры (все вкладки)
 
-Файл **[`lep_plugin_full_palette_uia.json`](lep_plugin_full_palette_uia.json)** — обход **всех** главных вкладок по `automation_id` из **`ALL/Docs/QA_UiaIds.md`**, подвкладки **Трасса**, пары **`capture_*`** после каждого клика; **`stop_on_first_error: false`** для полного журнала. Вызов: **`lep_run_scenario("lep_plugin_full_palette_uia.json")`** (долгий прогон, десятки шагов).
+Файл **[`lep_plugin_full_palette_uia.json`](lep_plugin_full_palette_uia.json)** — обход **всех** главных вкладок по `automation_id` из **`ALL/Docs/QA_UiaIds.md`**, подвкладки **Трасса**, пары **`capture_*`** после каждого клика; **`stop_on_first_error: false`** для полного журнала. Вызов: **`lep_run_scenario("lep_plugin_full_palette_uia.json")`** (долгий прогон, десятки шагов). Smoke + этот файл подряд: см. [`../scripts/run_lep_full_tabs_acceptance.py`](../scripts/run_lep_full_tabs_acceptance.py) (`--validate`, `--print-mcp-hint`).
 
 ## Старая матрица 10×
 
