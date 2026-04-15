@@ -18,31 +18,10 @@ from pathlib import Path
 
 MCP_ROOT = Path(__file__).resolve().parents[1]
 SCENARIOS_DIR = MCP_ROOT / "scenarios"
+if str(MCP_ROOT) not in sys.path:
+    sys.path.insert(0, str(MCP_ROOT))
 
-ALLOWED_INVOKES = frozenset(
-    {
-        "health",
-        "agent_session",
-        "server_info",
-        "server_update",
-        "uia_list",
-        "uia_list_subtree",
-        "uia_click",
-        "wait_for_element",
-        "uia_modal_ok",
-        "uia_modal_titlebar_close",
-        "mouse_click",
-        "mouse_click_window",
-        "mouse_move",
-        "mouse_move_smooth",
-        "send_keys",
-        "capture_window",
-        "capture_monitor",
-        "launch_process",
-        "nanocad_lep_prepare",
-        "action_json_log_recent",
-    }
-)
+from src.lep_scenario_runner import ALLOWED_INVOKES  # noqa: E402
 
 
 def resolve_scenario(arg: str) -> Path:
@@ -68,32 +47,13 @@ def load_scenario(path: Path) -> dict:
 
 
 def validate_scenario(data: dict, path: Path) -> None:
-    for key in ("id", "title", "version"):
-        if key not in data:
-            print(f"Отсутствует обязательное поле: {key} ({path})", file=sys.stderr)
-            sys.exit(1)
-    if int(data["version"]) != 1:
-        print(f"Поддерживается только version=1, получено: {data['version']}", file=sys.stderr)
+    from src import lep_scenario_runner as lsr
+
+    try:
+        lsr.validate_scenario(data, path)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
         sys.exit(1)
-    steps = data.get("steps")
-    if not isinstance(steps, list) or not steps:
-        print("Нужен непустой массив steps", file=sys.stderr)
-        sys.exit(1)
-    for i, step in enumerate(steps, start=1):
-        if not isinstance(step, dict):
-            print(f"Шаг {i}: ожидается объект", file=sys.stderr)
-            sys.exit(1)
-        inv = step.get("invoke")
-        if not inv or not isinstance(inv, str):
-            print(f"Шаг {i}: нужен invoke (строка)", file=sys.stderr)
-            sys.exit(1)
-        if inv not in ALLOWED_INVOKES:
-            print(f"Шаг {i}: неизвестный invoke «{inv}». Допустимы: {sorted(ALLOWED_INVOKES)}", file=sys.stderr)
-            sys.exit(1)
-        args = step.get("args")
-        if args is not None and not isinstance(args, dict):
-            print(f"Шаг {i}: args должен быть объектом", file=sys.stderr)
-            sys.exit(1)
 
 
 def build_markdown_prompt(scenario_path: Path, data: dict) -> str:

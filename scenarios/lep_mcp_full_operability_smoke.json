@@ -1,0 +1,118 @@
+{
+  "id": "lep_mcp_full_operability_smoke",
+  "title": "Приёмка: MCP + nanoCAD + палитра LEP — каталог, prepare, дерево, две вкладки, снимки",
+  "version": 1,
+  "skip_nanocad_lep_prepare": false,
+  "requires": {
+    "golden_dwg": false,
+    "note": "Полная работоспособность по UI: палитра видна, UIA отвечает, переключение вкладок. При холодном старте при необходимости задайте MCP_LEP_OPEN_DWG / open_dwg_path в первом prepare."
+  },
+  "steps": [
+    { "n": 1, "invoke": "health", "args": {}, "expect": "ok=true" },
+    { "n": 2, "invoke": "agent_session", "args": {}, "expect": "protocol_version и server.uia_tools_revision присутствуют" },
+    { "n": 3, "invoke": "lep_qa_catalog", "args": {}, "expect": "каталог сценариев и orchestrator_product_delivery в data" },
+    {
+      "n": 4,
+      "invoke": "nanocad_lep_prepare",
+      "args": { "skip_launch_if_running": true },
+      "expect": "ok=true; журнал в data.steps; палитра или skipped_command_input если уже открыта"
+    },
+    {
+      "n": 5,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullop_after_prepare_win"
+      },
+      "expect": "на скрине слева видна палитра LEP",
+      "capture_label": "fullop_gate"
+    },
+    {
+      "n": 6,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullop_after_prepare_mon"
+      },
+      "expect": "виден видовой экран и палитра",
+      "capture_label": "fullop_gate"
+    },
+    {
+      "n": 7,
+      "invoke": "uia_list_subtree",
+      "args": {
+        "process_name": "nCAD.exe",
+        "anchor_automation_id": "lep_palette_root",
+        "max_depth": 12,
+        "max_nodes": 1500
+      },
+      "expect": "якорь палитры и data.items не пустой"
+    },
+    {
+      "n": 8,
+      "invoke": "uia_click",
+      "args": { "process_name": "nCAD.exe", "automation_id": "lep_tab_route", "nth": 0 },
+      "expect": "клик по вкладке Трасса",
+      "capture_label": "fullop_tab_route"
+    },
+    {
+      "n": 9,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullop_after_route_win"
+      },
+      "expect": "вкладка Трасса активна на скрине",
+      "capture_label": "fullop_after_route"
+    },
+    {
+      "n": 10,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullop_after_route_mon"
+      },
+      "expect": "нет блокирующей модалки поверх",
+      "capture_label": "fullop_after_route"
+    },
+    {
+      "n": 11,
+      "invoke": "uia_click",
+      "args": { "process_name": "nCAD.exe", "automation_id": "lep_tab_drawings", "nth": 0 },
+      "expect": "клик по вкладке Генератор чертежей",
+      "capture_label": "fullop_tab_drawings"
+    },
+    {
+      "n": 12,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullop_after_drawings_win"
+      },
+      "expect": "контент вкладки генератора виден на скрине",
+      "capture_label": "fullop_after_drawings"
+    },
+    {
+      "n": 13,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullop_after_drawings_mon"
+      },
+      "expect": "контекст экрана без лишней модалки",
+      "capture_label": "fullop_after_drawings"
+    }
+  ]
+}

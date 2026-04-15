@@ -43,6 +43,35 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+### Разработка и тесты
+
+Для локального прогона unit-тестов (без UIA): установите dev-зависимости и запустите pytest из каталога `windows-mcp-server` с `PYTHONPATH=.` (чтобы резолвился пакет `src`):
+
+```bash
+cd windows-mcp-server
+pip install -r requirements.txt -r requirements-dev.txt
+PYTHONPATH=. pytest tests/ -q
+```
+
+### Автономный прогон сценария на Windows (без Cursor)
+
+Скрипт **[scripts/execute_lep_scenario_local.py](scripts/execute_lep_scenario_local.py)** выполняет шаги из **`scenarios/*.json`**, вызывая функции инструментов из **`src/server.py`** в том же процессе Python (тот же venv). Это **не HTTP** к эндпоинту MCP, но даёт плановый прогон на ВМ в **интерактивной пользовательской сессии** рядом с nanoCAD без агента Cursor.
+
+```powershell
+cd D:\path\to\LEP\windows-mcp-server
+.\.venv\Scripts\activate
+$env:PYTHONPATH="."
+python scripts/execute_lep_scenario_local.py --scenario scenarios/_template.json
+```
+
+Проверка JSON и белого списка `invoke` без импорта сервера (CI на macOS/Linux):
+
+```bash
+cd windows-mcp-server && PYTHONPATH=. python scripts/execute_lep_scenario_local.py --scenario scenarios/_template.json --validate-only
+```
+
+Markdown-промпт для чата: **`scripts/run_lep_scenario.py`**. Один вызов MCP на ВМ: **`lep_run_scenario`** (`scenario_name`, например `_template.json`).
+
 ## Переменные окружения
 
 | Переменная | Описание |
@@ -57,6 +86,8 @@ pip install -r requirements.txt
 | `MCP_BLOCK_LAUNCH` | **`1`** / **`true`** — отключить **`launch_process`**. |
 | `MCP_NANOCAD_EXE` | Полный путь к **`nCAD.exe`**, если **`AUTO_NANOCAD`** не находит установку (нестандартная папка). |
 | `MCP_LEP_COMMAND` | Строка команды для вызова палитры LEP из командной строки nanoCAD (по умолчанию **`LEP`**). Используется инструментом **`nanocad_lep_prepare`**, если параметр **`lep_command`** не передан. |
+| `MCP_LEP_OPEN_DWG` | (Опционально) Абсолютный путь к **`.dwg`**: подставляется в аргументы **первого** запуска **`nCAD.exe`** вместе с **`nanocad_lep_prepare`** / **`launch_process`**, чтобы автономно открыть эталонный чертёж (аналог **`LEP_GOLDEN_DWG`**). Если nCAD уже запущен и старт пропущен — см. `data.open_dwg_note` в журнале prepare. |
+| `LEP_GOLDEN_DWG` | Поддерживается как **алиас** к пути DWG для **`nanocad_lep_prepare`** при холодном старте (если **`MCP_LEP_OPEN_DWG`** не задан). |
 | `MCP_ACTION_JSONL` | Путь к файлу **JSONL** (одна строка = один JSON): успешные (`ok=true`) вызовы инструментов после фильтра. Пусто — логирование выключено. Каталог создаётся при первой записи. |
 | `MCP_ACTION_JSONL_FILTER` | **`lep_only`** (по умолчанию) — только шаги, связанные с nanoCAD/LEP/модалками и т.п.; **`all`** — любой успешный инструмент. |
 | `MCP_LEARN_JSONL` | Отдельный путь к **JSONL корпуса наблюдений** (`kind=cursor_interaction`, **`policy=none`**): параметры и краткий итог вызовов для **offline** / будущего распознавания. Пусто — канал выключен. Сервер **не читает** этот файл при UIA/capture и **не принимает** решений на его основе. |
@@ -121,6 +152,12 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 
 При заданном **`MCP_LEARN_JSONL`** после инструментов (тот же хук, что и для replay-лога) дописываются строки с **`policy: "none"`**: это **не** обучение в runtime и **не** влияние на клики. Данные предназначены для выгрузки и последующей обработки вне сервера. Инструмент **`learn_log_recent`** — только просмотр хвоста файла. В записи **нет** `png_base64`.
 
+### Интеграция с product-delivery (полный цикл в репозитории LEP)
+
+Сервер даёт **полный набор** для автоматизированного тестирования плагина LEP в nanoCAD, включая **`lep_run_scenario`** (один MCP-вызов = весь JSON-сценарий на ВМ без Cursor) и **`nanocad_lep_prepare`** с опциональным **`open_dwg_path`** / **`MCP_LEP_OPEN_DWG`**, дерево **`uia_list_subtree`** от якоря палитры, **`uia_click`** / **`send_keys`**, закрытие модалок (**`uia_modal_ok`**, **`uia_modal_titlebar_close`**), координатные **`mouse_*`**, пары **`capture_window`** + **`capture_monitor`** (в т.ч. `include_base64=true`), **`launch_process`** / **`AUTO_NANOCAD`**, лог шагов **`action_json_log_recent`**, JSON-сценарии **`scenarios/`** + **`scripts/run_lep_scenario.py`**, матрица **`scripts/run_lep_qa_matrix.py`**.
+
+В Cursor skill **product-delivery** (`.cursor/skills/product-delivery/SKILL.md`) после этапа разработки может вызываться субагент **`lep-plugin-tester`**, который обязан следовать workflow из **`agent_session`** и правилам **`.cursor/agents/lep-plugin-tester.md`**. Деплой на ВМ и проверка версии UIA-модуля на сервере: **`docs/DEPLOY_VM_CHECKLIST.md`**. Если ревизия **`server.uia_tools_revision`** в **`agent_session`** не совпадает с ожидаемой после merge, а на ВМ включён **`MCP_ALLOW_SELF_UPDATE`** и задан **`MCP_REPO_ROOT`** с **`.git`** — инструмент **`server_update`** (`git_pull` / `full`) подтягивает код и при **`MCP_RESTART_AFTER_UPDATE=1`** перезапускает процесс MCP; затем снова **`health`** → **`agent_session`** и повтор приёмочного прогона nanoCAD (см. пункт **2g** в **`agent_session` → `workflow`**).
+
 ## Контракт ответов и коммуникация агента
 
 Каждый инструмент возвращает **одну строку — валидный JSON** с полями:
@@ -140,6 +177,7 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 1. **`health`** — проверить связь и то, что ответ парсится.
 2. **`agent_session`** — получить `protocol_version`, список инструментов, **`workflow`**, поле **`lep_ui_titles_hint`** (подсказки `title_contains` для LEP), снимок безопасных env.
 2a. **С нуля (ВМ / чистый сеанс):** один вызов **`nanocad_lep_prepare`** — запуск **`nCAD.exe`** (если ещё не в UIA), закрытие типовых модалок, команда LEP, ожидание **`lep_palette_root`**; в **`data.steps`** — журнал шагов. Затем пара **`capture_*`** для визуальной проверки.
+2f. **Полностью автономно (без пошагового агента):** один вызов **`lep_run_scenario(scenario_name)`** — весь сценарий из **`scenarios/`** выполняется на сервере; альтернатива — **`scripts/execute_lep_scenario_local.py`** в пользовательской сессии ВМ. Для эталонного чертежа при первом запуске nCAD см. **`open_dwg_path`** / **`MCP_LEP_OPEN_DWG`** / **`LEP_GOLDEN_DWG`** в **`nanocad_lep_prepare`** (или первый шаг сценария с тем же вызовом).
 3. **`uia_list_subtree`** (LEP) — карта UI **только палитры** (якорь `lep_palette_root` или regex по заголовку); меньше `truncated`, видны подвкладки **Создание / Анализ / …**. Иначе **`uia_list`** по `nCAD.exe` с большим `max_nodes` — смотреть `data.truncated`.
 4. При необходимости **`wait_for_element`**, затем **`uia_click`**; при `ERR_NOT_FOUND` снова **`uia_list`**.
 4b. Если на **`capture_*`** видна **MessageBox** / **«Внимание»**, а **`uia_click`** по **OK** в **`nCAD.exe`** даёт **`ERR_NOT_FOUND`** — **`uia_modal_ok`**, при необходимости **`uia_modal_titlebar_close`** (крестик), иначе сначала **`mouse_move_smooth`** (или **`mouse_move`**) к точке, затем **`mouse_click`** по координатам крестика/OK (расчёт от снимка / границ окна) — иначе курсор «прыгает» и на RDP не видно движения; затем снова пару снимков.
@@ -171,7 +209,8 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 | `capture_window` | PNG окна: `data.path` на сервере; **`data.png_base64`** (+ MIME в `data.image_mime_type`) для клиента на Mac. **`filename_suffix`**: если **`out_path`** не задан — имя файла содержит слаг (латиница); иначе из заголовка окна (`data.filename_slug_used`). Каталог: **`MCP_CAPTURE_DIR`** или temp. `max_edge_px` уменьшает встроенное изображение при больших мониторах; файл на диске остаётся полным кадром. В `data.content_hint` — эвристика «кадр пустой/без видео». **`data.bbox`** — **экранные** пиксели кадра. |
 | `capture_monitor` | PNG **целого монитора** (MSS): `monitor_index` **0** / **1** и т.д. Параметр **`filename_suffix`** — как у **`capture_window`**, если **`out_path`** не задан. Те же `include_base64` / `max_edge_px` / `content_hint`. |
 | `launch_process` | Запуск `.exe` на Windows (отдельный процесс). Нужен **`MCP_ALLOW_LAUNCH=1`**; иначе `ERR_FORBIDDEN`. **`executable`**: полный путь или **`AUTO_NANOCAD`** / **`AUTO`** — поиск `nCAD.exe` в PATH и типичных каталогах Nanosoft. После старта ждёт появления процесса в UIA (`wait_timeout_sec`). |
-| `nanocad_lep_prepare` | Сценарий «nanoCAD + палитра LEP»: проверка UIA **`nCAD.exe`** → при необходимости **`launch_process` (AUTO_NANOCAD)** → серия **`uia_modal_ok`** / **`uia_modal_titlebar_close`** → клик командной строки (**`1011`**) → **`send_keys`** (команда из **`lep_command`** / **`MCP_LEP_COMMAND`** / **`LEP`**) → **`wait_for_element`** на **`lep_palette_root`**. Реализация: **`src/nanocad_bootstrap.py`**. При уже открытой палитре повторный ввод команды не выполняется (`data.skipped_command_input`). |
+| `nanocad_lep_prepare` | Сценарий «nanoCAD + палитра LEP»: проверка UIA **`nCAD.exe`** → при необходимости **`launch_process` (AUTO_NANOCAD)** (с опциональным путём **`.dwg`** из **`open_dwg_path`** / **`MCP_LEP_OPEN_DWG`** / **`LEP_GOLDEN_DWG`**) → серия **`uia_modal_ok`** / **`uia_modal_titlebar_close`** → клик командной строки (**`1011`**) → **`send_keys`** (команда из **`lep_command`** / **`MCP_LEP_COMMAND`** / **`LEP`**) → **`wait_for_element`** на **`lep_palette_root`**. Реализация: **`src/nanocad_bootstrap.py`**. При уже открытой палитре повторный ввод команды не выполняется (`data.skipped_command_input`). |
+| `lep_run_scenario` | Выполнить **`scenarios/<имя>.json`** на сервере: шаги **`invoke`** по порядку через те же функции, что и отдельные MCP-инструменты; **`data.step_log`**. Автономный прогон без Cursor. Только Windows; имена файлов без `..`. |
 | `action_json_log_recent` | Чтение **последних** записей из **`MCP_ACTION_JSONL`** (`data.entries`: `action_signature`, `replay_hint`, `params`, `response_summary`). Если лог не настроен — `data.enabled=false`. Используйте для пропуска уже выполненных шагов в повторном прогоне. |
 | `learn_log_recent` | Чтение **последних** записей из **`MCP_LEARN_JSONL`** (`policy=none`, без влияния на инструменты). Если корпус выключен — `data.enabled=false`. |
 

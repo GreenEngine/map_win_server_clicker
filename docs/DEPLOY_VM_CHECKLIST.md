@@ -22,9 +22,11 @@
 
 - в **`protocol_version`** ожидаемая строка (см. `src/protocol.py`);
 - в **`server`** присутствуют **`uia_tools_revision`** и **`uia_modal_title_pattern_sha12`** (сверка с актуальным репо после выкладки);
-- в списке **`tools`** есть **`uia_list_subtree`**, **`mouse_click_window`**, **`mouse_move`**, **`mouse_move_smooth`**.
+- в списке **`tools`** есть **`uia_list_subtree`**, **`mouse_click_window`**, **`mouse_move`**, **`mouse_move_smooth`**, **`lep_run_scenario`**.
 
 Затем короткий **`health`**.
+
+**Автономный прогон без Cursor (один вызов MCP):** после деплоя задайте при необходимости **`MCP_LEP_OPEN_DWG`** или **`LEP_GOLDEN_DWG`** (эталонный **`.dwg`** только при **холодном** старте через **`launch_process`** внутри **`nanocad_lep_prepare`** — см. `data.open_dwg_note` в ответе, если nCAD уже был запущен). Вызовите **`lep_run_scenario`** с **`scenario_name`**, например **`_template.json`** — в **`data.step_log`** виден журнал шагов; при ошибке смотрите последний элемент лога.
 
 Smoke WinForms (опционально): палитра LEP → **Генератор чертежей** → «Профили пересечений (лист A3)» → **Сгенерировать** → на диалоге **«Профили пересечений»** вызвать **`uia_modal_ok`** (или **`send_keys`** с `{ENTER}` на переднем плане) — диалог должен закрыться без подбора координат.
 

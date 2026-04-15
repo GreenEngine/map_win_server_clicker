@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import socket
 import sys
+from pathlib import Path
 
 _SERVER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _SERVER_DIR not in sys.path:
@@ -28,6 +29,8 @@ from src import session as session_mod
 from src import update as update_mod
 from src import action_json_log
 from src import learn_log
+from src import lep_qa_catalog as lep_qa_catalog_mod
+from src import lep_scenario_runner
 from src.action_json_log import tool_log_decorator
 from src.protocol import err_json, ok_json, parse_request_id
 
@@ -69,6 +72,21 @@ def health(client_request_id: str | None = None) -> str:
     return ok_json(
         data={"status": "alive", "host": _HOST, "port": _PORT},
         message="health",
+        request_id=rid,
+    )
+
+
+@mcp.tool()
+@tool_log_decorator("lep_qa_catalog")
+def lep_qa_catalog(client_request_id: str | None = None) -> str:
+    """
+    Каталог JSON-сценариев LEP, пути к матрице QA, рекомендуемый порядок вызовов MCP для полного smoke/UI-теста.
+    Без UIA — можно вызывать первым после agent_session для планирования прогона на Windows.
+    """
+    rid = parse_request_id(client_request_id)
+    return ok_json(
+        data=lep_qa_catalog_mod.lep_qa_catalog_payload(),
+        message="lep_qa_catalog",
         request_id=rid,
     )
 
@@ -425,6 +443,7 @@ def learn_log_recent(max_lines: int = 40, client_request_id: str | None = None) 
 def nanocad_lep_prepare(
     skip_launch_if_running: bool = True,
     launch_arguments: str = "",
+    open_dwg_path: str | None = None,
     launch_wait_timeout_sec: float = 90.0,
     modal_rounds: int = 14,
     modal_timeout_sec: float = 3.5,
@@ -440,10 +459,12 @@ def nanocad_lep_prepare(
     Логика вынесена в `src/nanocad_bootstrap.py`. Нужен MCP_ALLOW_LAUNCH=1 для старта процесса.
     skip_launch_if_running=false — принудительный launch даже при уже запущенном nCAD (осторожно: второй экземпляр).
     lep_command: по умолчанию из MCP_LEP_COMMAND или «LEP».
+    open_dwg_path: .dwg при холодном старте nCAD (аргумент командной строки); иначе MCP_LEP_OPEN_DWG / LEP_GOLDEN_DWG.
     """
     return nanocad_bootstrap.nanocad_lep_prepare(
         skip_launch_if_running=skip_launch_if_running,
         launch_arguments=launch_arguments,
+        open_dwg_path=open_dwg_path,
         launch_wait_timeout_sec=launch_wait_timeout_sec,
         modal_rounds=modal_rounds,
         modal_timeout_sec=modal_timeout_sec,
@@ -453,6 +474,55 @@ def nanocad_lep_prepare(
         wait_palette_timeout_sec=wait_palette_timeout_sec,
         wait_palette_poll_sec=0.45,
         client_request_id=client_request_id,
+    )
+
+
+@mcp.tool()
+@tool_log_decorator("lep_run_scenario")
+def lep_run_scenario(
+    scenario_name: str,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Выполнить JSON-сценарий из каталога scenarios/ по имени файла (без path traversal).
+    Шаги вызывают те же функции, что и MCP-инструменты — один вызов для автономного прогона на ВМ без Cursor.
+    Только Windows; сценарий должен быть version=1 и только с invoke из белого списка (см. lep_scenario_runner).
+    """
+    rid = parse_request_id(client_request_id)
+    if sys.platform != "win32":
+        return err_json("ERR_PLATFORM", "lep_run_scenario только на Windows", request_id=rid)
+    scenarios_root = Path(__file__).resolve().parent.parent / "scenarios"
+    try:
+        path = lep_scenario_runner.resolve_scenario_path_under_root(scenario_name, scenarios_root)
+        data = lep_scenario_runner.load_scenario_dict(path)
+        lep_scenario_runner.validate_scenario(data, path)
+    except FileNotFoundError as e:
+        return err_json("ERR_NOT_FOUND", str(e), request_id=rid)
+    except ValueError as e:
+        return err_json("ERR_VALIDATION", str(e), request_id=rid)
+
+    mod = sys.modules[__name__]
+
+    def _get_tool(name: str):
+        fn = getattr(mod, name, None)
+        if fn is None or not callable(fn):
+            raise RuntimeError(f"unknown tool: {name}")
+        return fn
+
+    prefix = str(data.get("id", "scenario"))[:40]
+    ok, log = lep_scenario_runner.run_scenario_json(data, get_tool=_get_tool, id_prefix=prefix)
+    if ok:
+        return ok_json(
+            data={"scenario": str(path), "steps_run": len(log), "step_log": log},
+            message="lep_run_scenario",
+            request_id=rid,
+        )
+    last = log[-1] if log else {}
+    return err_json(
+        str(last.get("code") or "ERR_SCENARIO_STEP"),
+        str(last.get("message") or "step failed"),
+        data={"scenario": str(path), "step_log": log},
+        request_id=rid,
     )
 
 

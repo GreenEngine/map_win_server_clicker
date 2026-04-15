@@ -30,6 +30,10 @@ def agent_session_payload() -> dict[str, Any]:
     tools = [
         {"name": "health", "role": "проверка живости; всегда вызывать первым при сомнениях в сети"},
         {"name": "agent_session", "role": "этот снимок: версия протокола, шаги, env"},
+        {
+            "name": "lep_qa_catalog",
+            "role": "список scenarios/*.json, пути к матрице QA, порядок инструментов для полного теста LEP; вызывать после agent_session перед длинным сценарием",
+        },
         {"name": "server_info", "role": "краткая версия/git/python"},
         {"name": "server_update", "role": "обновление pip/git; только при MCP_ALLOW_SELF_UPDATE=1"},
         {"name": "uia_list", "role": "дерево UI в JSON (data.items); смотреть data.truncated"},
@@ -84,7 +88,11 @@ def agent_session_payload() -> dict[str, Any]:
         },
         {
             "name": "nanocad_lep_prepare",
-            "role": "Один вызов: nCAD в UIA → launch при необходимости → модалки → командная строка 1011 → LEP (MCP_LEP_COMMAND) → wait lep_palette_root; data.steps",
+            "role": "Один вызов: nCAD в UIA → launch при необходимости → модалки → командная строка 1011 → LEP (MCP_LEP_COMMAND) → wait lep_palette_root; data.steps; open_dwg_path / MCP_LEP_OPEN_DWG / LEP_GOLDEN_DWG — аргумент запуска nCAD для эталонного DWG",
+        },
+        {
+            "name": "lep_run_scenario",
+            "role": "выполнить scenarios/<имя>.json на сервере без Cursor: шаги invoke из JSON по порядку; автономный прогон; только Windows и безопасные имена файлов",
         },
         {
             "name": "action_json_log_recent",
@@ -98,10 +106,16 @@ def agent_session_payload() -> dict[str, Any]:
     workflow = [
         "1) Вызвать health — убедиться, что JSON парсится и ok=true.",
         "2) Вызвать agent_session — прочитать protocol_version, server.uia_tools_revision / uia_modal_title_pattern_sha12 (сверка с репо после деплоя) и рекомендуемые инструменты.",
+        "2b) Для полного плана прогона LEP вызвать lep_qa_catalog — список JSON-сценариев, подсказки CLI (run_lep_scenario / run_lep_qa_matrix), порядок smoke-инструментов.",
         "2a) С нуля или после перезагрузки ВМ: nanocad_lep_prepare (journal в data.steps) — затем capture_window + capture_monitor для визуальной проверки палитры.",
         "2c) Если на сервере задан MCP_ACTION_JSONL — при успешных шагах (фильтр lep_only по умолчанию) дописываются JSONL-строки; перед длинным сценарием вызвать action_json_log_recent и пропускать уже имеющиеся action_signature.",
         "2e) Если задан MCP_LEARN_JSONL — в отдельный файл дописываются наблюдения (kind=cursor_interaction, policy=none); они **не влияют** на uia_click/capture и не читаются сервером при принятии решений. learn_log_recent — только просмотр хвоста для агента.",
         "2d) Декларативные сценарии: каталог scenarios/ + scripts/run_lep_scenario.py — промпт для агента; capture_window/capture_monitor: filename_suffix или out_path (MCP_CAPTURE_DIR).",
+        "2f) Автономно на ВМ без агента: один вызов lep_run_scenario(scenario_name) — выполняет весь JSON на сервере; либо scripts/execute_lep_scenario_local.py в том же venv.",
+        "2g) Автообновление MCP при неверной работе из‑за старого кода на ВМ: если uia_tools_revision/protocol_version не совпадают с ожидаемыми после merge "
+        "или стабильно воспроизводится исправленный в git баг — при MCP_ALLOW_SELF_UPDATE=1 и корректном MCP_REPO_ROOT вызвать server_update(mode=git_pull или full), "
+        "дождаться data.restart_scheduled=true, пауза 3–10 с, снова health → agent_session (сверка ревизий), затем повторить nanocad_lep_prepare / lep_run_scenario / сценарий. "
+        "Если self-update отключён — BLOCKED: обновить ВМ вручную по DEPLOY_VM_CHECKLIST.",
         "2b) LEP: перед кликами по вкладкам палитры — capture_window + capture_monitor (include_base64=true) и проверить на картинке, "
         "что панель LEP слева открыта (заголовок LEP, вкладки). Если палитры нет — клик по командной строке automation_id 1011, "
         "send_keys LEP + with_enter, снова пара снимков. Не тестировать вкладки «вслепую», если на скрине нет палитры.",

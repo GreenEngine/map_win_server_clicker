@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 import time
 from typing import Any
@@ -49,6 +50,7 @@ def nanocad_lep_prepare(
     *,
     skip_launch_if_running: bool = True,
     launch_arguments: str = "",
+    open_dwg_path: str | None = None,
     launch_wait_timeout_sec: float = 90.0,
     modal_rounds: int = 14,
     modal_timeout_sec: float = 3.5,
@@ -64,6 +66,8 @@ def nanocad_lep_prepare(
     фокус командной строки (automation_id 1011), ввод команды LEP (+ Enter), ожидание lep_palette_root.
 
     lep_command: по умолчанию из MCP_LEP_COMMAND или «LEP».
+    open_dwg_path: путь к .dwg — подставляется в аргументы запуска nCAD.exe (только при этом запуске процесса);
+        если не задан — используется MCP_LEP_OPEN_DWG из окружения. Имеет смысл для автономного открытия «золотого» чертежа при холодном старте.
     """
     rid = parse_request_id(client_request_id)
     if sys.platform != "win32":
@@ -74,6 +78,18 @@ def nanocad_lep_prepare(
     if not cmd:
         return err_json("ERR_VALIDATION", "lep_command пустой", request_id=rid)
 
+    dwg = (open_dwg_path or os.environ.get("MCP_LEP_OPEN_DWG") or os.environ.get("LEP_GOLDEN_DWG") or "").strip()
+    launch_args_effective = (launch_arguments or "").strip()
+    if dwg:
+        if not os.path.isfile(dwg):
+            return err_json(
+                "ERR_VALIDATION",
+                f"open_dwg_path / MCP_LEP_OPEN_DWG / LEP_GOLDEN_DWG: файл не найден: {dwg!r}",
+                request_id=rid,
+            )
+        quoted = shlex.quote(dwg)
+        launch_args_effective = f"{launch_args_effective} {quoted}".strip()
+
     running = nanocad_uia_connected(2.0)
     _append_step(steps, "check_uia_connected", {"running": running})
 
@@ -82,7 +98,7 @@ def nanocad_lep_prepare(
         lp = _loads(
             uia_tools.launch_process(
                 "AUTO_NANOCAD",
-                launch_arguments,
+                launch_args_effective,
                 launch_wait_timeout_sec,
                 client_request_id=rid,
             )
@@ -95,6 +111,8 @@ def nanocad_lep_prepare(
                 "code": lp.get("code"),
                 "data": lp.get("data"),
                 "forced": bool(running and not skip_launch_if_running),
+                "launch_arguments_effective": launch_args_effective or None,
+                "open_dwg_path": dwg or None,
             },
         )
         if not lp.get("ok"):
@@ -106,7 +124,18 @@ def nanocad_lep_prepare(
             )
         time.sleep(1.0)
     else:
-        _append_step(steps, "launch_skipped", {"reason": "nCAD.exe already in UIA (skip_launch_if_running=true)"})
+        _append_step(
+            steps,
+            "launch_skipped",
+            {
+                "reason": "nCAD.exe already in UIA (skip_launch_if_running=true)",
+                "open_dwg_note": (
+                    "DWG не передан в запуск: при уже запущенном nCAD откройте чертёж вручную или перезапустите с skip_launch_if_running=false и open_dwg_path"
+                    if dwg
+                    else None
+                ),
+            },
+        )
 
     # Снять модалки кнопками (несколько подряд — «Совет дня», лицензия, предупреждения).
     for i in range(max(1, int(modal_rounds))):
@@ -164,6 +193,8 @@ def nanocad_lep_prepare(
                 "palette_ready": True,
                 "lep_command": cmd,
                 "skipped_command_input": True,
+                "open_dwg_path": dwg or None,
+                "open_dwg_applied_on_launch": bool(dwg and need_launch),
                 "steps": steps,
             },
             message="nanocad_lep_prepare",
@@ -230,7 +261,13 @@ def nanocad_lep_prepare(
         )
 
     return ok_json(
-        data={"palette_ready": True, "lep_command": cmd, "steps": steps},
+        data={
+            "palette_ready": True,
+            "lep_command": cmd,
+            "open_dwg_path": dwg or None,
+            "open_dwg_applied_on_launch": bool(dwg and need_launch),
+            "steps": steps,
+        },
         message="nanocad_lep_prepare",
         request_id=rid,
     )

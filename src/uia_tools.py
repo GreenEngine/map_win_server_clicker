@@ -12,7 +12,7 @@ from typing import Any
 from src.protocol import err_json, ok_json, parse_request_id
 
 # Меняйте при доработке модалок / send_keys — смотрите agent_session.uia_tools_revision.
-UIA_TOOLS_REVISION = "2026-04-15-winforms-modal-v1"
+UIA_TOOLS_REVISION = "2026-04-15-descendants-autoid-fallback-v1"
 
 
 def _modal_poll_sec() -> float:
@@ -255,7 +255,11 @@ def _descendants_matching(
     if control_type:
         crit["control_type"] = control_type
     try:
-        return list(w.descendants(**crit))
+        via_api = list(w.descendants(**crit))
+        # pywinauto: descendants(auto_id=...) иногда даёт [] для WinForms,
+        # хотя element_info.automation_id совпадает (см. nanocad_lep_prepare / 1011).
+        if via_api:
+            return via_api
     except TypeError:
         pass
     matches: list[Any] = []

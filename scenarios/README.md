@@ -1,6 +1,6 @@
 # JSON-сценарии LEP / nanoCAD (MCP)
 
-Декларативный список вызовов инструментов Windows MCP для агента **lep-plugin-tester**. Сами вызовы выполняет агент в Cursor по сгенерированному промпту ([`scripts/run_lep_scenario.py`](../scripts/run_lep_scenario.py)).
+Декларативный список вызовов инструментов Windows MCP. **Два режима:** (1) агент **lep-plugin-tester** в Cursor по промпту из [`scripts/run_lep_scenario.py`](../scripts/run_lep_scenario.py); (2) **автономно на Windows** — [`scripts/execute_lep_scenario_local.py`](../scripts/execute_lep_scenario_local.py) выполняет `steps` напрямую через `src/server` (без HTTP и без Cursor).
 
 ## Схема (version: 1)
 
@@ -34,6 +34,15 @@
 ## Связь с UIA id
 
 Стабильные `automation_id` вкладок и кнопок: [`../../ALL/Docs/QA_UiaIds.md`](../../ALL/Docs/QA_UiaIds.md).
+
+## Приёмка «полная работоспособность» (product-delivery + MCP)
+
+Файл **[`lep_mcp_full_operability_smoke.json`](lep_mcp_full_operability_smoke.json)** — минимальная цепочка: **`health`** → **`agent_session`** → **`lep_qa_catalog`** → **`nanocad_lep_prepare`** → пара **`capture_*`** (палитра на скрине) → **`uia_list_subtree`** → вкладки **Трасса** и **Генератор чертежей** с парами снимков после каждого клика.
+
+- Один вызов на ВМ: MCP **`lep_run_scenario("lep_mcp_full_operability_smoke.json")`** (или имя без `.json`).
+- Проверка только JSON: `python scripts/execute_lep_scenario_local.py --scenario scenarios/lep_mcp_full_operability_smoke.json --validate-only` (из каталога `windows-mcp-server`, `PYTHONPATH=.`).
+
+Критерии A–F в **`.cursor/skills/product-delivery/SKILL.md`** (раздел «Критерий полная работоспособность»).
 
 ## Старая матрица 10×
 

@@ -78,6 +78,7 @@ def _is_lep_related_tool(tool: str, params: dict[str, Any]) -> bool:
     """Эвристика: что считать «действием с плагином / CAD»."""
     if tool in (
         "nanocad_lep_prepare",
+        "lep_run_scenario",
         "uia_list_subtree",
         "uia_modal_ok",
         "uia_modal_titlebar_close",
