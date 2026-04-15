@@ -23,7 +23,7 @@
 
 - в **`protocol_version`** ожидаемая строка (см. `src/protocol.py`);
 - в **`server`** присутствуют **`uia_tools_revision`** и **`uia_modal_title_pattern_sha12`** (сверка с актуальным репо после выкладки);
-- в списке **`tools`** есть **`uia_list_subtree`**, **`mouse_click_window`**, **`mouse_move`**, **`mouse_move_smooth`**, **`lep_run_scenario`**.
+- в списке **`tools`** есть **`uia_list_subtree`**, **`mouse_click_window`**, **`mouse_move`**, **`mouse_move_smooth`**, **`lep_run_scenario`**, **`lep_run_scenario_sequence`**.
 
 Затем короткий **`health`**.
 

@@ -79,6 +79,7 @@ def _is_lep_related_tool(tool: str, params: dict[str, Any]) -> bool:
     if tool in (
         "nanocad_lep_prepare",
         "lep_run_scenario",
+        "lep_run_scenario_sequence",
         "uia_list_subtree",
         "uia_modal_ok",
         "uia_modal_titlebar_close",

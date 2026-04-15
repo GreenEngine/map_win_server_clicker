@@ -12,10 +12,12 @@ ok, code, message, protocol_version, request_id, server_time_utc, data.
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import sys
 from pathlib import Path
+from typing import Any
 
 _SERVER_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if _SERVER_DIR not in sys.path:
@@ -37,6 +39,49 @@ from src.protocol import err_json, ok_json, parse_request_id
 _HOST = os.environ.get("MCP_HOST", "0.0.0.0")
 _PORT = int(os.environ.get("MCP_PORT", "8765"))
 _STATELESS = os.environ.get("MCP_STATELESS_HTTP", "").lower() in ("1", "true", "yes")
+
+# Дефолт для lep_run_scenario_sequence: приёмка MCP + полный обход палитры одним вызовом.
+_DEFAULT_SCENARIO_SEQUENCE_CSV = "lep_mcp_full_operability_smoke.json,lep_plugin_full_palette_uia.json"
+
+
+def _lep_execute_loaded_scenario(data: dict[str, Any], path: Path, rid: str) -> str:
+    """Общее выполнение уже загруженного и валидированного сценария (только Windows)."""
+    mod = sys.modules[__name__]
+
+    def _get_tool(name: str):
+        fn = getattr(mod, name, None)
+        if fn is None or not callable(fn):
+            raise RuntimeError(f"unknown tool: {name}")
+        return fn
+
+    prefix = str(data.get("id", "scenario"))[:40]
+    ok, log = lep_scenario_runner.run_scenario_json(data, get_tool=_get_tool, id_prefix=prefix)
+    failed_ns = [e["n"] for e in log if not e.get("ok")]
+    base_data: dict[str, Any] = {
+        "scenario": str(path),
+        "steps_run": len(log),
+        "step_log": log,
+        "all_steps_ok": ok,
+        "failed_step_numbers": failed_ns,
+        "stop_on_first_error": bool(data.get("stop_on_first_error", True)),
+    }
+    if ok:
+        return ok_json(data=base_data, message="lep_run_scenario", request_id=rid)
+    last = log[-1] if log else {}
+    if data.get("stop_on_first_error") is False and len(log) == len(data.get("steps") or []):
+        return err_json(
+            "ERR_SCENARIO_PARTIAL",
+            f"Сценарий выполнен полностью; ошибки на шагах: {failed_ns}",
+            data=base_data,
+            request_id=rid,
+        )
+    return err_json(
+        str(last.get("code") or "ERR_SCENARIO_STEP"),
+        str(last.get("message") or "step failed"),
+        data=base_data,
+        request_id=rid,
+    )
+
 
 # server_update: если переменная не задана или пустая — по умолчанию разрешено. Явно 0/false/no — отключение.
 _mcp_su = os.environ.get("MCP_ALLOW_SELF_UPDATE")
@@ -487,12 +532,14 @@ def nanocad_lep_prepare(
 @tool_log_decorator("lep_run_scenario")
 def lep_run_scenario(
     scenario_name: str,
+    stop_on_first_error: bool | None = None,
     client_request_id: str | None = None,
 ) -> str:
     """
     Выполнить JSON-сценарий из каталога scenarios/ по имени файла (без path traversal).
     Шаги вызывают те же функции, что и MCP-инструменты — один вызов для автономного прогона на ВМ без Cursor.
     Только Windows; сценарий должен быть version=1 и только с invoke из белого списка (см. lep_scenario_runner).
+    stop_on_first_error: если задан (true/false), переопределяет поле с тем же именем в JSON для этого прогона.
     """
     rid = parse_request_id(client_request_id)
     if sys.platform != "win32":
@@ -501,45 +548,84 @@ def lep_run_scenario(
     try:
         path = lep_scenario_runner.resolve_scenario_path_under_root(scenario_name, scenarios_root)
         data = lep_scenario_runner.load_scenario_dict(path)
+        if stop_on_first_error is not None:
+            data = dict(data)
+            data["stop_on_first_error"] = bool(stop_on_first_error)
         lep_scenario_runner.validate_scenario(data, path)
     except FileNotFoundError as e:
         return err_json("ERR_NOT_FOUND", str(e), request_id=rid)
     except ValueError as e:
         return err_json("ERR_VALIDATION", str(e), request_id=rid)
 
-    mod = sys.modules[__name__]
+    return _lep_execute_loaded_scenario(data, path, rid)
 
-    def _get_tool(name: str):
-        fn = getattr(mod, name, None)
-        if fn is None or not callable(fn):
-            raise RuntimeError(f"unknown tool: {name}")
-        return fn
 
-    prefix = str(data.get("id", "scenario"))[:40]
-    ok, log = lep_scenario_runner.run_scenario_json(data, get_tool=_get_tool, id_prefix=prefix)
-    failed_ns = [e["n"] for e in log if not e.get("ok")]
-    base_data: dict[str, Any] = {
-        "scenario": str(path),
-        "steps_run": len(log),
-        "step_log": log,
-        "all_steps_ok": ok,
-        "failed_step_numbers": failed_ns,
-        "stop_on_first_error": bool(data.get("stop_on_first_error", True)),
+@mcp.tool()
+@tool_log_decorator("lep_run_scenario_sequence")
+def lep_run_scenario_sequence(
+    scenario_names_csv: str | None = None,
+    client_request_id: str | None = None,
+) -> str:
+    """
+    Несколько JSON-сценариев подряд одним вызовом MCP (автономная приёмка: smoke + палитра и т.д.).
+    scenario_names_csv: имена файлов через запятую, как у lep_run_scenario (без path traversal).
+    По умолчанию: lep_mcp_full_operability_smoke.json, lep_plugin_full_palette_uia.json.
+    Итог: data.runs[] с тем же составом полей, что у одного lep_run_scenario; data.all_scenarios_ok — true только если каждый прогон завершился с ok=true на верхнем уровне ответа (включ. ERR_SCENARIO_PARTIAL считается ok=false для агрегата, если внутри all_steps_ok=false).
+    """
+    rid = parse_request_id(client_request_id)
+    if sys.platform != "win32":
+        return err_json("ERR_PLATFORM", "lep_run_scenario_sequence только на Windows", request_id=rid)
+    raw = (scenario_names_csv or "").strip() or _DEFAULT_SCENARIO_SEQUENCE_CSV
+    names = [s.strip() for s in raw.split(",") if s.strip()][:8]
+    if not names:
+        return err_json("ERR_VALIDATION", "Пустой список сценариев", request_id=rid)
+
+    scenarios_root = Path(__file__).resolve().parent.parent / "scenarios"
+    runs: list[dict[str, Any]] = []
+    aggregate_ok = True
+
+    for scenario_name in names:
+        try:
+            path = lep_scenario_runner.resolve_scenario_path_under_root(scenario_name, scenarios_root)
+            data = lep_scenario_runner.load_scenario_dict(path)
+            lep_scenario_runner.validate_scenario(data, path)
+        except FileNotFoundError as e:
+            aggregate_ok = False
+            runs.append({"scenario_name": scenario_name, "error": "ERR_NOT_FOUND", "message": str(e)})
+            break
+        except ValueError as e:
+            aggregate_ok = False
+            runs.append({"scenario_name": scenario_name, "error": "ERR_VALIDATION", "message": str(e)})
+            break
+
+        one = _lep_execute_loaded_scenario(data, path, rid)
+        body = json.loads(one)
+        inner = body.get("data") if isinstance(body.get("data"), dict) else {}
+        steps_ok = inner.get("all_steps_ok")
+        entry: dict[str, Any] = {
+            "scenario_name": scenario_name,
+            "scenario_path": str(path),
+            "top_ok": body.get("ok") is True,
+            "top_code": body.get("code"),
+            "all_steps_ok": steps_ok,
+            "failed_step_numbers": inner.get("failed_step_numbers"),
+            "steps_run": inner.get("steps_run"),
+        }
+        runs.append(entry)
+        if steps_ok is not True:
+            aggregate_ok = False
+
+    payload: dict[str, Any] = {
+        "scenario_names_csv": raw,
+        "runs": runs,
+        "all_scenarios_ok": aggregate_ok,
     }
-    if ok:
-        return ok_json(data=base_data, message="lep_run_scenario", request_id=rid)
-    last = log[-1] if log else {}
-    if data.get("stop_on_first_error") is False and len(log) == len(data.get("steps") or []):
-        return err_json(
-            "ERR_SCENARIO_PARTIAL",
-            f"Сценарий выполнен полностью; ошибки на шагах: {failed_ns}",
-            data=base_data,
-            request_id=rid,
-        )
+    if aggregate_ok:
+        return ok_json(data=payload, message="lep_run_scenario_sequence", request_id=rid)
     return err_json(
-        str(last.get("code") or "ERR_SCENARIO_STEP"),
-        str(last.get("message") or "step failed"),
-        data=base_data,
+        "ERR_SCENARIO_SEQUENCE",
+        "Один или несколько сценариев завершились с ошибкой; см. data.runs",
+        data=payload,
         request_id=rid,
     )
 

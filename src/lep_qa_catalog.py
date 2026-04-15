@@ -96,6 +96,7 @@ def lep_qa_catalog_payload() -> dict[str, Any]:
             "health",
             "agent_session",
             "lep_qa_catalog",
+            "lep_run_scenario_sequence",
             "lep_run_scenario",
             "nanocad_lep_prepare",
             "capture_window",
@@ -111,11 +112,12 @@ def lep_qa_catalog_payload() -> dict[str, Any]:
         "extended_palette_uia_scenario": "lep_plugin_full_palette_uia.json",
         "extended_palette_note": "Полный обход главных вкладок LEP + подвкладки Трасса по automation_id (QA_UiaIds); stop_on_first_error=false — полный step_log даже при частичных сбоях; lep_run_scenario на ВМ.",
         "primary_acceptance_lep_run_scenario": 'lep_run_scenario("lep_mcp_full_operability_smoke.json") на ВМ — один MCP-вызов для критериев product-delivery A–E',
+        "primary_acceptance_sequence": "lep_run_scenario_sequence() — один MCP-вызов: smoke + полная палитра (см. scenario_names_csv по умолчанию).",
         "orchestrator_product_delivery": {
             "repo_track": "pytest/diff в репозитории — не заменяет UI на ВМ.",
             "windows_track": "Каждый приёмочный прогон nanoCAD через MCP считать отдельным шагом; вести windows_run_index..windows_run_max (по умолчанию 30 в product-delivery; см. .cursor/skills/product-delivery/SKILL.md).",
             "autonomy_goal": "Автономность = закрытие сценариев без ручных кликов в CAD (кроме блокеров: NETLOAD, RDP без framebuffer).",
-            "autonomous_batch": "На ВМ: (1) MCP lep_run_scenario(scenario_name) — один вызов, весь JSON; (2) execute_lep_scenario_local.py — то же локально в venv; Планировщик заданий в пользовательской сессии.",
+            "autonomous_batch": "На ВМ: (1) MCP lep_run_scenario_sequence() — один вызов, по умолчанию smoke + полная палитра; (2) MCP lep_run_scenario(имя.json) — один сценарий; (3) execute_lep_scenario_local.py — локально в venv; Планировщик заданий в пользовательской сессии.",
             "mcp_self_heal_on_connected_server": "Подключённый MCP: при расхождении uia_tools_revision с репо или при подозрении на старый server.py — server_update(git_pull|full) при MCP_ALLOW_SELF_UPDATE=1 и MCP_REPO_ROOT; после data.restart_scheduled — пауза, health, agent_session, затем повтор UI-прогона. Иначе ручной деплой (DEPLOY_VM_CHECKLIST).",
         },
     }

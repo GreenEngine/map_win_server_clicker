@@ -92,7 +92,11 @@ def agent_session_payload() -> dict[str, Any]:
         },
         {
             "name": "lep_run_scenario",
-            "role": "выполнить scenarios/<имя>.json на сервере без Cursor: шаги invoke из JSON по порядку; автономный прогон; только Windows и безопасные имена файлов",
+            "role": "выполнить scenarios/<имя>.json на сервере без Cursor: шаги invoke из JSON по порядку; автономный прогон; только Windows и безопасные имена файлов; опционально stop_on_first_error переопределяет JSON",
+        },
+        {
+            "name": "lep_run_scenario_sequence",
+            "role": "несколько сценариев подряд одним вызовом MCP (по умолчанию smoke + полная палитра); data.runs и data.all_scenarios_ok",
         },
         {
             "name": "action_json_log_recent",
@@ -111,7 +115,7 @@ def agent_session_payload() -> dict[str, Any]:
         "2c) Если на сервере задан MCP_ACTION_JSONL — при успешных шагах (фильтр lep_only по умолчанию) дописываются JSONL-строки; перед длинным сценарием вызвать action_json_log_recent и пропускать уже имеющиеся action_signature.",
         "2e) Если задан MCP_LEARN_JSONL — в отдельный файл дописываются наблюдения (kind=cursor_interaction, policy=none); они **не влияют** на uia_click/capture и не читаются сервером при принятии решений. learn_log_recent — только просмотр хвоста для агента.",
         "2d) Декларативные сценарии: каталог scenarios/ + scripts/run_lep_scenario.py — промпт для агента; capture_window/capture_monitor: filename_suffix или out_path (MCP_CAPTURE_DIR).",
-        "2f) Автономно на ВМ без агента: один вызов lep_run_scenario(scenario_name) — выполняет весь JSON на сервере; либо scripts/execute_lep_scenario_local.py в том же venv.",
+        "2f) Автономно на ВМ без агента: один вызов lep_run_scenario(scenario_name) — выполняет весь JSON на сервере; либо один вызов lep_run_scenario_sequence() — smoke + палитра по умолчанию; либо scripts/execute_lep_scenario_local.py в том же venv.",
         "2g) Автообновление MCP при неверной работе из‑за старого кода на ВМ: если uia_tools_revision/protocol_version не совпадают с ожидаемыми после merge "
         "или стабильно воспроизводится исправленный в git баг — при MCP_ALLOW_SELF_UPDATE=1 и корректном MCP_REPO_ROOT вызвать server_update(mode=git_pull или full), "
         "дождаться data.restart_scheduled=true, пауза 3–10 с, снова health → agent_session (сверка ревизий), затем повторить nanocad_lep_prepare / lep_run_scenario / сценарий. "
