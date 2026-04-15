@@ -1,24 +1,8 @@
-<#
-.SYNOPSIS
-  Регистрирует задачу планировщика: LEP Windows MCP при входе пользователя + перезапуск при сбое.
+﻿# Register-LepMcpLogonTask.ps1
+# Scheduled task: MCP server at user logon + restart on failure (interactive session for nanoCAD UIA).
+# See docs/WINDOWS_AUTOSTART.md
+# Encoding: UTF-8 with BOM; body ASCII-only for Windows PowerShell 5.1.
 
-.DESCRIPTION
-  Не использует классическую службу LocalSystem — MCP должен работать в интерактивной сессии
-  того же пользователя, что и nanoCAD (см. docs/WINDOWS_AUTOSTART.md).
-
-  Запуск: PowerShell от имени администратора (опционально), при необходимости поправьте пути.
-
-.PARAMETER McpRoot
-  Корень репозитория на диске (каталог, где лежат src\, scripts\, .venv\) — например
-  C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker
-  (не родитель Desktop\windows-mcp-server без вложенной папки клона, и без опечатки map_min → map_win).
-
-.PARAMETER PythonExe
-  Полный путь к python.exe (по умолчанию: McpRoot\.venv\Scripts\python.exe).
-
-.PARAMETER TaskName
-  Имя задачи в планировщике (по умолчанию: LEP-Windows-MCP).
-#>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -28,29 +12,33 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$McpRoot = $McpRoot.Trim().TrimEnd('\', '/')
+$McpRoot = $McpRoot.Trim().TrimEnd('\').TrimEnd('/')
+
 if (-not (Test-Path -LiteralPath $McpRoot)) {
     $hint = ""
     if ($McpRoot -match 'map_min_server_clicker') {
         $alt = $McpRoot -replace 'map_min_server_clicker', 'map_win_server_clicker'
         if (Test-Path -LiteralPath $alt) {
-            $hint = " Найден похожий путь (опечатка min→win): $alt — используйте его в -McpRoot."
+            $hint = " Similar path exists (typo min->win): $alt Use it as -McpRoot."
         } else {
-            $hint = " Проверьте опечатку: часто нужно map_win_server_clicker, а не map_min_server_clicker."
+            $hint = " Check typo: folder name is map_win_server_clicker (not map_min_server_clicker)."
         }
     }
-    throw "Каталог не существует: $McpRoot.$hint Укажите -McpRoot на корень клона (где есть src\server.py)."
+    throw "Directory not found: $McpRoot $hint Pass -McpRoot to repo root (folder containing src\server.py)."
 }
+
 $McpRoot = (Resolve-Path -LiteralPath $McpRoot).Path
+
 if (-not $PythonExe) {
     $PythonExe = Join-Path $McpRoot ".venv\Scripts\python.exe"
 }
 if (-not (Test-Path -LiteralPath $PythonExe)) {
-    throw "Python не найден: $PythonExe (создайте venv или укажите -PythonExe)"
+    throw "Python not found: $PythonExe Create venv or pass -PythonExe."
 }
+
 $ServerPy = Join-Path $McpRoot "src\server.py"
 if (-not (Test-Path -LiteralPath $ServerPy)) {
-    throw "Не найден server.py: $ServerPy"
+    throw "server.py not found: $ServerPy"
 }
 
 $Action = New-ScheduledTaskAction -Execute $PythonExe -Argument "`"$ServerPy`"" -WorkingDirectory $McpRoot
@@ -65,5 +53,5 @@ $Settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit ([TimeSpan]::Zero)
 
 Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
-Write-Host "OK: зарегистрирована задача '$TaskName' (AtLogOn, user=$env:USERNAME, RestartCount=3)."
-Write-Host "Проверка: Get-ScheduledTask -TaskName '$TaskName' | Get-ScheduledTaskInfo"
+Write-Host "OK: registered task '$TaskName' (AtLogOn user=$env:USERNAME RestartCount=3)."
+Write-Host "Check: Get-ScheduledTask -TaskName '$TaskName' | Get-ScheduledTaskInfo"
