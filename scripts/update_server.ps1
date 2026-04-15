@@ -39,10 +39,23 @@ if (-not $SkipGit -and (Test-Path (Join-Path $RepoRoot ".git"))) {
         git fetch origin
         $branch = (git rev-parse --abbrev-ref HEAD).Trim()
         if (-not $branch) { $branch = "main" }
+        function Test-OriginRef([string]$name) {
+            git show-ref --verify "refs/remotes/origin/$name" 2>$null | Out-Null
+            return ($LASTEXITCODE -eq 0)
+        }
+        $remoteDefault = ""
+        $sym = git symbolic-ref -q refs/remotes/origin/HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $sym -match "refs/remotes/origin/(.+)$") {
+            $remoteDefault = $Matches[1].Trim()
+        }
         $target = ""
-        foreach ($b in @($branch, "main", "master")) {
-            git show-ref --verify "refs/remotes/origin/$b" 2>$null | Out-Null
-            if ($LASTEXITCODE -eq 0) { $target = $b; break }
+        if (($branch -eq "master" -or $branch -eq "main") -and $remoteDefault -and (Test-OriginRef $remoteDefault) -and $remoteDefault -ne $branch) {
+            $target = $remoteDefault
+            Write-Host "Git pull target from origin/HEAD: $target (local branch $branch)"
+        } else {
+            foreach ($b in @($branch, "main", "master")) {
+                if (Test-OriginRef $b) { $target = $b; break }
+            }
         }
         if ($target) {
             git pull --ff-only origin $target

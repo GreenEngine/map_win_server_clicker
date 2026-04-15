@@ -14,7 +14,7 @@ from typing import Any
 # Версия логики self-update (для agent_session / отладки): git для git_pull|full через Python; дефолт режима — full.
 _SELF_UPDATE_LOGIC_KEY = "python-git-first-default-full-2026-04-15"
 # Временная метка для проверки git pull на ВМ (можно удалить после приёмки).
-_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-pushtest-3"
+_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-pushtest-4"
 
 
 def _server_root() -> Path:
@@ -298,6 +298,30 @@ def _git_head_short(repo: Path) -> str:
     return "?"
 
 
+def _origin_default_branch_short(root: Path) -> str:
+    """
+    После ``git fetch``: куда указывает ``origin/HEAD`` (часто ``main`` на GitHub).
+    Пустая строка, если симлинк не настроен (старые зеркала).
+    """
+    try:
+        p = subprocess.run(
+            ["git", "symbolic-ref", "-q", "refs/remotes/origin/HEAD"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if p.returncode != 0:
+            return ""
+        ref = (p.stdout or "").strip()
+        prefix = "refs/remotes/origin/"
+        if ref.startswith(prefix):
+            return ref[len(prefix) :].strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _update_sync_requested() -> bool:
     """Старый режим: git/pip блокируют ответ server_update до конца (отладка)."""
     return os.environ.get("MCP_UPDATE_SYNC", "").strip().lower() in ("1", "true", "yes")
@@ -360,11 +384,28 @@ def _git_fetch_pull_ff_only(root: Path, lines: list[str], run) -> None:
         )
         return chk.returncode == 0
 
-    target = branch if _has_origin_ref(branch) else ""
-    if not target and _has_origin_ref("main"):
-        target = "main"
-    if not target and _has_origin_ref("master"):
-        target = "master"
+    remote_default = _origin_default_branch_short(root)
+    if remote_default:
+        _self_update_trace(f"git: origin/HEAD -> {remote_default!r}")
+
+    # Локально checkout на master, а на GitHub основная линия — main: pull origin master
+    # не двигает HEAD, пока на origin/main приходят коммиты. Тянем ветку по умолчанию удалённого.
+    if (
+        branch in ("master", "main")
+        and remote_default
+        and _has_origin_ref(remote_default)
+        and remote_default != branch
+    ):
+        target = remote_default
+        _self_update_trace(
+            f"git: pull target={target!r} (локальная ветка {branch!r}; совпадает с origin/HEAD)"
+        )
+    else:
+        target = branch if _has_origin_ref(branch) else ""
+        if not target and _has_origin_ref("main"):
+            target = "main"
+        if not target and _has_origin_ref("master"):
+            target = "master"
 
     if target:
         _self_update_trace(f"git: running `git pull --ff-only origin {target}`")
