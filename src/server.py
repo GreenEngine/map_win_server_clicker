@@ -48,6 +48,12 @@ _mcp_ra = os.environ.get("MCP_RESTART_AFTER_UPDATE")
 if _mcp_ra is None or str(_mcp_ra).strip() == "":
     os.environ["MCP_RESTART_AFTER_UPDATE"] = "1"
 
+# На Windows по умолчанию git/pip через scripts/update_server.ps1 + перезапуск из PS (см. update.py). Отключить: MCP_UPDATE_USE_PS1=0.
+if sys.platform == "win32":
+    _mcp_ps1 = os.environ.get("MCP_UPDATE_USE_PS1")
+    if _mcp_ps1 is None or str(_mcp_ps1).strip() == "":
+        os.environ["MCP_UPDATE_USE_PS1"] = "1"
+
 # launch_process: по умолчанию ВКЛ (часто в среде уже стоит MCP_ALLOW_LAUNCH=0 из старых скриптов).
 # Явный запрет только: MCP_BLOCK_LAUNCH=1 (или true / yes).
 if os.environ.get("MCP_BLOCK_LAUNCH", "").strip().lower() in ("1", "true", "yes"):

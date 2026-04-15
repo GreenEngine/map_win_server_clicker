@@ -67,6 +67,22 @@ def _restart_after_update_enabled() -> bool:
     return True
 
 
+def schedule_parent_exit_only(delay_sec: float = 2.5) -> None:
+    """
+    Только завершить текущий процесс MCP после паузы (ответ клиенту успевает уйти).
+    Используется, когда перезапуск уже инициирован извне (например update_server.ps1).
+    """
+
+    def _exit_only() -> None:
+        try:
+            time.sleep(float(delay_sec))
+            os._exit(0)
+        except Exception:
+            pass
+
+    threading.Thread(target=_exit_only, daemon=True).start()
+
+
 def schedule_restart_after_update() -> None:
     """
     Через ~1.5 с после ответа клиенту: старт `scripts/mcp_restart_after_update.py`, затем os._exit(0).
@@ -150,7 +166,7 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
     try:
         if (
             sys.platform == "win32"
-            and os.environ.get("MCP_UPDATE_USE_PS1", "").strip() in ("1", "true", "yes", "YES")
+            and os.environ.get("MCP_UPDATE_USE_PS1", "").strip().lower() not in ("0", "false", "no")
         ):
             ps1 = _server_root() / "scripts" / "update_server.ps1"
             if ps1.is_file():
@@ -166,12 +182,30 @@ def run_self_update(mode: str = "pip") -> tuple[bool, str, bool]:
                 ]
                 if mode_l == "pip":
                     cmd.append("-SkipGit")
+                want_ps_restart = _restart_after_update_enabled()
+                helper = srv / "scripts" / "mcp_restart_after_update.py"
+                server_py = srv / "src" / "server.py"
+                if want_ps_restart and helper.is_file() and server_py.is_file():
+                    cmd.extend(
+                        [
+                            "-McpParentPid",
+                            str(os.getpid()),
+                            "-PythonExe",
+                            sys.executable,
+                        ]
+                    )
                 run(cmd, cwd=_server_root())
                 lines.append("Скрипт update_server.ps1 выполнен.")
-                if _restart_after_update_enabled():
+                if want_ps_restart and helper.is_file() and server_py.is_file():
+                    # Перезапуск стартовал из PowerShell (Start-Process → mcp_restart_after_update.py);
+                    # здесь только корректно завершаем родительский процесс после ответа клиенту.
+                    schedule_parent_exit_only(2.5)
+                    restart_scheduled = True
+                    lines.append("Перезапуск MCP: helper из update_server.ps1; процесс сервера завершится через ~2.5 с.")
+                elif want_ps_restart:
                     schedule_restart_after_update()
                     restart_scheduled = True
-                    lines.append("Перезапуск процесса MCP запланирован (через ~2 с).")
+                    lines.append("Перезапуск процесса MCP запланирован (через ~2 с, встроенный helper).")
                 else:
                     lines.append("Перезапустите процесс MCP вручную, чтобы подтянуть новые .py.")
                 return True, "\n".join(lines), restart_scheduled

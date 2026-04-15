@@ -13,8 +13,9 @@
 
 ## 2. Перезапуск MCP
 
-- После **merge в монорепо LEP** на Mac: на ВМ через Cursor / агент вызвать **`server_update`** с режимом **`git_pull`** или **`full`** при **`MCP_ALLOW_SELF_UPDATE=1`** (по умолчанию в `server.py`). Дождаться **`data.restart_scheduled`: true** (или вручную перезапустить `server.py` через ~2 с) — иначе агент продолжит работать со **старой** копией `uia_tools.py` (расхождение `uia_tools_revision` в **`agent_session`**).
-- Либо вручную на ВМ: остановить процесс `python … src\server.py`, снова запустить из venv (см. [README.md](../README.md)).
+- После **merge** на Mac: на ВМ через агент вызвать **`server_update`** с режимом **`git_pull`** или **`full`** при **`MCP_ALLOW_SELF_UPDATE=1`**. На Windows по умолчанию обновление идёт через **PowerShell** [scripts/update_server.ps1](../scripts/update_server.ps1); в конце скрипт при **`MCP_RESTART_AFTER_UPDATE=1`** (по умолчанию) стартует **`mcp_restart_after_update.py`** — дождитесь **`data.restart_scheduled`: true** и паузы **3–10 с**, затем снова **`health`** → **`agent_session`** (сверка `uia_tools_revision`). Иначе процесс останется на старом коде.
+- Если **`MCP_UPDATE_USE_PS1=0`** — обновление только встроенным Python-путём, перезапуск по-прежнему через тот же helper из **`update.py`** (или вручную).
+- Вручную на ВМ: остановить `python … src\server.py`, снова запустить из venv (см. [README.md](../README.md)).
 
 ## 3. Проверка после деплоя
 
