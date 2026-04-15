@@ -27,6 +27,7 @@ from src import nanocad_bootstrap
 from src import session as session_mod
 from src import update as update_mod
 from src import action_json_log
+from src import learn_log
 from src.action_json_log import tool_log_decorator
 from src.protocol import err_json, ok_json, parse_request_id
 
@@ -383,6 +384,38 @@ def action_json_log_recent(max_lines: int = 40, client_request_id: str | None = 
             "count": len(items),
         },
         message="action_json_log_recent",
+        request_id=rid,
+    )
+
+
+@mcp.tool()
+def learn_log_recent(max_lines: int = 40, client_request_id: str | None = None) -> str:
+    """
+    Последние записи из JSONL корпуса наблюдений (MCP_LEARN_JSONL).
+    Только чтение; данные не влияют на поведение инструментов. Если лог выключен — data.enabled=false.
+    """
+    rid = parse_request_id(client_request_id)
+    ok, msg, items = learn_log.read_recent_entries(max_lines)
+    if not ok and msg == "MCP_LEARN_JSONL не задан":
+        return ok_json(
+            data={"enabled": False, "entries": [], "hint": msg},
+            message="learn_log_recent",
+            request_id=rid,
+        )
+    if not ok:
+        return err_json("ERR_IO", msg, request_id=rid)
+    log_path = (os.environ.get("MCP_LEARN_JSONL") or "").strip()
+    return ok_json(
+        data={
+            "enabled": True,
+            "path": log_path,
+            "filter": (os.environ.get("MCP_LEARN_FILTER") or "lep_only").strip(),
+            "include_failures": os.environ.get("MCP_LEARN_INCLUDE_FAILURES", "").strip().lower()
+            in ("1", "true", "yes"),
+            "entries": items,
+            "count": len(items),
+        },
+        message="learn_log_recent",
         request_id=rid,
     )
 

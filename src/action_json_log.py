@@ -8,6 +8,8 @@
   all — любой инструмент с ok=true.
 
 Записи можно агрегировать по полю action_signature, чтобы не повторять уже выполненные шаги в сценарии.
+
+Отдельный корпус наблюдений (**MCP_LEARN_JSONL**) пишет модуль **learn_log** из того же декоратора; он не влияет на replay.
 """
 
 from __future__ import annotations
@@ -135,6 +137,10 @@ def _response_summary(tool: str, body: dict[str, Any]) -> dict[str, Any]:
         "process_name",
         "truncated",
         "items_count",
+        "hwnd",
+        "owner_hwnd",
+        "button",
+        "size",
     )
     summary: dict[str, Any] = {}
     for k in keys_keep:
@@ -146,7 +152,26 @@ def _response_summary(tool: str, body: dict[str, Any]) -> dict[str, Any]:
         summary["items_count"] = len(data["items"]) if isinstance(data["items"], list) else None
     if tool == "nanocad_lep_prepare" and isinstance(data.get("steps"), list):
         summary["steps_count"] = len(data["steps"])
+    if tool in ("capture_window", "capture_monitor"):
+        for k in ("path", "content_hint", "bbox", "filename_suffix", "monitor_index", "monitors_count"):
+            if k in data:
+                summary[k] = data[k]
     return summary
+
+
+def sanitize_tool_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Публичная обёртка для learn_log и внешних скриптов."""
+    return _sanitize_params(params)
+
+
+def is_lep_related_tool(tool: str, params: dict[str, Any]) -> bool:
+    """Та же эвристика, что для MCP_ACTION_JSONL_FILTER=lep_only."""
+    return _is_lep_related_tool(tool, params)
+
+
+def tool_response_summary(tool: str, body: dict[str, Any]) -> dict[str, Any]:
+    """Краткое содержимое data из ответа инструмента (без base64)."""
+    return _response_summary(tool, body)
 
 
 def _replay_hint(tool: str, params: dict[str, Any]) -> str:
@@ -163,7 +188,7 @@ def _replay_hint(tool: str, params: dict[str, Any]) -> str:
 
 def _action_signature(tool: str, params: dict[str, Any]) -> str:
     """Стабильный короткий идентификатор шага для дедупликации сценариев."""
-    san = _sanitize_params({k: v for k, v in params.items() if k != "client_request_id"})
+    san = sanitize_tool_params({k: v for k, v in params.items() if k != "client_request_id"})
     raw = json.dumps({"tool": tool, "params": san}, ensure_ascii=False, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
@@ -186,7 +211,7 @@ def try_log_successful_tool(tool: str, params: dict[str, Any], result_json: str)
         "request_id": body.get("request_id"),
         "action_signature": _action_signature(tool, params),
         "replay_hint": _replay_hint(tool, params),
-        "params": _sanitize_params(params),
+        "params": sanitize_tool_params(params),
         "response_summary": _response_summary(tool, body),
         "protocol_version": body.get("protocol_version"),
     }
@@ -239,6 +264,12 @@ def tool_log_decorator(tool_name: str):
             out = fn(*args, **kwargs)
             try:
                 try_log_successful_tool(tool_name, dict(kwargs), out)
+            except Exception:
+                pass
+            try:
+                from src import learn_log as _learn_log
+
+                _learn_log.try_log_observation(tool_name, dict(kwargs), out)
             except Exception:
                 pass
             return out

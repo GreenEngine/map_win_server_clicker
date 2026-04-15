@@ -11,6 +11,19 @@ from typing import Any
 
 from src.protocol import err_json, ok_json, parse_request_id
 
+# Меняйте при доработке модалок / send_keys — смотрите agent_session.uia_tools_revision.
+UIA_TOOLS_REVISION = "2026-04-15-winforms-modal-v1"
+
+
+def _modal_poll_sec() -> float:
+    raw = (os.environ.get("MCP_MODAL_POLL_SEC") or "").strip()
+    if raw:
+        try:
+            return max(0.03, min(float(raw), 2.0))
+        except ValueError:
+            pass
+    return 0.12
+
 
 def _require_win() -> None:
     if sys.platform != "win32":
@@ -523,9 +536,21 @@ def uia_click(
 _DEFAULT_MODAL_TITLE_RE = re.compile(
     r"Внимание|Ошибка|Нет данных|Подтверждение|Информация|Нет данных трассы|"
     r"Анализ трассы|Экспорт|Импорт|Корректировка|Журнал|LEP —|LEP -|"
+    r"Профили пересечений|Построение трассы|"
     r"Совет дня|Совет|Tip of the Day|nanoCAD",
     re.IGNORECASE,
 )
+
+
+def uia_revision_payload() -> dict[str, str]:
+    """Короткий снимок для agent_session: сверка с репо без чтения git."""
+    import hashlib
+
+    digest = hashlib.sha1(_DEFAULT_MODAL_TITLE_RE.pattern.encode("utf-8", errors="ignore")).hexdigest()[:12]
+    return {
+        "uia_tools_revision": UIA_TOOLS_REVISION,
+        "uia_modal_title_pattern_sha12": digest,
+    }
 
 
 def _win32_pid_for_process(proc_name: str | None) -> int:
@@ -538,6 +563,60 @@ def _win32_pid_for_process(proc_name: str | None) -> int:
         return int(app.process)
     except Exception:
         return 0
+
+
+def _win32_hwnd_pid(hwnd: int) -> int:
+    if not hwnd or sys.platform != "win32":
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(wintypes.HWND(int(hwnd)), ctypes.byref(pid))
+    return int(pid.value)
+
+
+def _win32_get_owner_hwnd(hwnd: int) -> int:
+    if not hwnd or sys.platform != "win32":
+        return 0
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    GW_OWNER = 4
+    return int(user32.GetWindow(wintypes.HWND(int(hwnd)), GW_OWNER) or 0)
+
+
+def _win32_modal_owned_by_ncad_tree(owner_hwnd: int, main_ncad_hwnd: int) -> bool:
+    """Модалка LEP может иметь GW_OWNER = палитра (дочернее к главному окну), а не сам top-level nCAD."""
+    if not owner_hwnd or not main_ncad_hwnd or sys.platform != "win32":
+        return False
+    if owner_hwnd == main_ncad_hwnd:
+        return True
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    try:
+        if user32.IsChild(wintypes.HWND(int(main_ncad_hwnd)), wintypes.HWND(int(owner_hwnd))):
+            return True
+    except Exception:
+        pass
+    h = int(owner_hwnd)
+    for _ in range(8):
+        o = _win32_get_owner_hwnd(h)
+        if not o:
+            break
+        if o == main_ncad_hwnd:
+            return True
+        try:
+            if user32.IsChild(wintypes.HWND(int(main_ncad_hwnd)), wintypes.HWND(int(o))):
+                return True
+        except Exception:
+            pass
+        h = o
+    return False
 
 
 def _win32_largest_visible_top_hwnd_for_pid(target_pid: int) -> int:
@@ -753,20 +832,21 @@ def _modal_candidate_match(
     pat: re.Pattern,
     max_window_width: int,
     max_window_height: int,
-) -> tuple[bool, str, str, int, int]:
-    """(ok, title, class_name, rw, rh) для верхнего уровня."""
+    main_hwnd_ncad: int = 0,
+) -> tuple[bool, str, str, int, int, bool]:
+    """(ok, title, class_name, rw, rh, title_hit) для верхнего уровня."""
     try:
         if not w.is_visible():
-            return False, "", "", 0, 0
+            return False, "", "", 0, 0, False
     except Exception:
-        return False, "", "", 0, 0
+        return False, "", "", 0, 0, False
     try:
         r = w.rectangle()
         rw, rh = int(r.width()), int(r.height())
     except Exception:
-        return False, "", "", 0, 0
+        return False, "", "", 0, 0, False
     if rw > int(max_window_width) or rh > int(max_window_height):
-        return False, "", "", rw, rh
+        return False, "", "", rw, rh, False
     try:
         title = (w.window_text() or "").strip()
     except Exception:
@@ -781,9 +861,74 @@ def _modal_candidate_match(
     is_dialog_shell = "#32770" in cls or "Dialog" in str(getattr(w.element_info, "control_type", ""))
     title_hit = bool(pat.search(title)) if title else False
     small_dialog = is_dialog_shell and rw < 900 and rh < 700
-    if not title_hit and not small_dialog:
-        return False, title, cls, rw, rh
-    return True, title, cls, rw, rh
+
+    hwnd_u = _hwnd_uia(w)
+    owner_hwnd = _win32_get_owner_hwnd(hwnd_u) if hwnd_u else 0
+    cls_lower = cls.lower()
+    is_winforms = "windowsforms" in cls_lower and "window" in cls_lower
+    winforms_owned = bool(
+        is_winforms
+        and main_hwnd_ncad
+        and owner_hwnd
+        and _win32_modal_owned_by_ncad_tree(owner_hwnd, main_hwnd_ncad)
+        and rw >= 100
+        and rh >= 60
+    )
+
+    if title_hit or small_dialog or winforms_owned:
+        return True, title, cls, rw, rh, title_hit
+    return False, title, cls, rw, rh, title_hit
+
+
+def _uia_try_click_modal_button(w: Any, button_titles: list[str]) -> tuple[bool, str, str]:
+    """
+    Закрыть модалку кликом по кнопке OK/ОК: прямой child_window, затем обход descendants,
+    затем AcceptButton через {ENTER}. Возвращает (ok, button_label, via).
+    """
+    for bt in button_titles:
+        try:
+            ch = w.child_window(title=bt, control_type="Button")
+            if ch.exists(timeout=0.15):
+                ch.click_input()
+                return True, bt, "uia_Button_click"
+        except Exception:
+            continue
+    norms = [(b.strip().casefold(), b.strip()) for b in button_titles if (b or "").strip()]
+    try:
+        desc = w.descendants(control_type="Button")
+    except Exception:
+        desc = []
+    for el in desc:
+        try:
+            wt = (el.window_text() or "").strip()
+            name = ""
+            try:
+                name = (el.element_info.name or "").strip()
+            except Exception:
+                pass
+            wtf = wt.casefold()
+            nf = name.casefold()
+            for norm, orig in norms:
+                if not norm:
+                    continue
+                if wtf == norm or nf == norm or wtf.startswith(norm) or nf.startswith(norm):
+                    el.click_input()
+                    return True, orig, "uia_Button_descendant"
+        except Exception:
+            continue
+    try:
+        desc2 = list(w.descendants(control_type="Button"))
+    except Exception:
+        desc2 = []
+    if desc2 and len(desc2) <= 6:
+        try:
+            w.set_focus()
+            time.sleep(0.04)
+            w.type_keys("{ENTER}")
+            return True, "{ENTER}", "acceptbutton_enter"
+        except Exception:
+            pass
+    return False, "", ""
 
 
 def uia_modal_ok(
@@ -818,45 +963,59 @@ def uia_modal_ok(
     if not buttons:
         return err_json("ERR_VALIDATION", "Укажите button_titles", request_id=rid)
 
+    main_ncad = 0
+    if (owner_process_name or "").strip():
+        main_ncad = _win32_largest_visible_top_hwnd_for_pid(_win32_pid_for_process(owner_process_name))
+    poll = _modal_poll_sec()
     d = Desktop(backend="uia")
     deadline = time.monotonic() + max(0.5, float(timeout_sec))
     last_err = ""
     while time.monotonic() < deadline:
         try:
+            ranked: list[tuple[int, Any, str, str, int, int, bool]] = []
             for w in d.windows():
                 try:
                     if not w.is_visible():
                         continue
                 except Exception:
                     continue
-                ok_c, title, cls, rw, rh = _modal_candidate_match(w, pat, max_window_width, max_window_height)
+                ok_c, title, cls, rw, rh, th = _modal_candidate_match(
+                    w, pat, max_window_width, max_window_height, main_ncad
+                )
                 if not ok_c:
                     continue
-                for bt in buttons:
-                    try:
-                        ch = w.child_window(title=bt, control_type="Button")
-                        if ch.exists(timeout=0.2):
-                            ch.click_input()
-                            wh = _hwnd_uia(w)
-                            return ok_json(
-                                data={
-                                    "closed": True,
-                                    "window_title": title,
-                                    "class_name": cls,
-                                    "button": bt,
-                                    "size": {"w": rw, "h": rh},
-                                    "via": "uia_Button_click",
-                                    "hwnd": wh,
-                                },
-                                message="uia_modal_ok",
-                                request_id=rid,
-                            )
-                    except Exception as e2:
-                        last_err = str(e2)
-                        continue
+                hwnd_u = _hwnd_uia(w)
+                oh = _win32_get_owner_hwnd(hwnd_u) if hwnd_u else 0
+                pri = 0
+                if main_ncad and oh and _win32_modal_owned_by_ncad_tree(oh, main_ncad):
+                    pri += 8
+                if th:
+                    pri += 4
+                if "#32770" in (cls or ""):
+                    pri += 2
+                if "windowsforms" in (cls or "").lower():
+                    pri += 1
+                ranked.append((pri, w, title, cls, rw, rh, th))
+            for _pri, w, title, cls, rw, rh, _th in sorted(ranked, key=lambda t: -t[0]):
+                ok_btn, btn_lbl, via = _uia_try_click_modal_button(w, buttons)
+                if ok_btn:
+                    wh = _hwnd_uia(w)
+                    return ok_json(
+                        data={
+                            "closed": True,
+                            "window_title": title,
+                            "class_name": cls,
+                            "button": btn_lbl,
+                            "size": {"w": rw, "h": rh},
+                            "via": via,
+                            "hwnd": wh,
+                        },
+                        message="uia_modal_ok",
+                        request_id=rid,
+                    )
         except Exception as e:
             last_err = str(e)
-        time.sleep(0.25)
+        time.sleep(poll)
     ok_w, t_w, c_w, rw_w, rh_w, detail_w, dlg_hwnd, own_hwnd = _win32_try_modal_ok(
         pat, max_window_width, max_window_height, buttons, owner_process_name
     )
@@ -903,15 +1062,38 @@ def uia_modal_titlebar_close(
     except re.error as e:
         return err_json("ERR_VALIDATION", f"title_regex: {e}", request_id=rid)
 
+    main_ncad = _win32_largest_visible_top_hwnd_for_pid(_win32_pid_for_process("nCAD.exe"))
+    poll = _modal_poll_sec()
     d = Desktop(backend="uia")
     deadline = time.monotonic() + max(0.5, float(timeout_sec))
     last_err = ""
     while time.monotonic() < deadline:
         try:
+            ranked: list[tuple[int, Any, str, str, int, int]] = []
             for w in d.windows():
-                ok_c, title, cls, rw, rh = _modal_candidate_match(w, pat, max_window_width, max_window_height)
+                try:
+                    if not w.is_visible():
+                        continue
+                except Exception:
+                    continue
+                ok_c, title, cls, rw, rh, th = _modal_candidate_match(
+                    w, pat, max_window_width, max_window_height, main_ncad
+                )
                 if not ok_c:
                     continue
+                hwnd_u = _hwnd_uia(w)
+                oh = _win32_get_owner_hwnd(hwnd_u) if hwnd_u else 0
+                pri = 0
+                if main_ncad and oh and _win32_modal_owned_by_ncad_tree(oh, main_ncad):
+                    pri += 8
+                if th:
+                    pri += 4
+                if "#32770" in (cls or ""):
+                    pri += 2
+                if "windowsforms" in (cls or "").lower():
+                    pri += 1
+                ranked.append((pri, w, title, cls, rw, rh))
+            for _pri, w, title, cls, rw, rh in sorted(ranked, key=lambda t: -t[0]):
                 try:
                     r = w.rectangle()
                     hwnd = _hwnd_uia(w)
@@ -936,7 +1118,7 @@ def uia_modal_titlebar_close(
                     continue
         except Exception as e:
             last_err = str(e)
-        time.sleep(0.25)
+        time.sleep(poll)
     return err_json(
         "ERR_NOT_FOUND",
         "Модальное окно для закрытия по крестику не найдено за timeout",
@@ -1208,9 +1390,9 @@ def send_keys(
                 except Exception:
                     pass
                 is_modal_shell = "#32770" in cls or "Dialog" in ct
-                if is_modal_shell and rw < int(os.environ.get("MCP_SENDKEYS_MODAL_MAX_W", "1400")) and rh < int(
-                    os.environ.get("MCP_SENDKEYS_MODAL_MAX_H", "950")
-                ):
+                max_mw = int(os.environ.get("MCP_SENDKEYS_MODAL_MAX_W", "1400"))
+                max_mh = int(os.environ.get("MCP_SENDKEYS_MODAL_MAX_H", "950"))
+                if is_modal_shell and rw < max_mw and rh < max_mh:
                     try:
                         user32.SetForegroundWindow(fg)
                     except Exception:
@@ -1227,10 +1409,43 @@ def send_keys(
                             "via": "foreground_modal",
                             "hwnd": fg,
                             "class_name": cls,
+                            "size": {"w": rw, "h": rh},
                         },
                         message="send_keys",
                         request_id=rid,
                     )
+                ncad_pid = _win32_pid_for_process("nCAD.exe")
+                if ncad_pid and _win32_hwnd_pid(fg) == ncad_pid:
+                    cls_lower = (cls or "").lower()
+                    is_winforms = "windowsforms" in cls_lower and "window" in cls_lower
+                    if (
+                        is_winforms
+                        and rw < max_mw
+                        and rh < max_mh
+                        and rw >= 100
+                        and rh >= 60
+                    ):
+                        try:
+                            user32.SetForegroundWindow(fg)
+                        except Exception:
+                            pass
+                        fw.set_focus()
+                        if text:
+                            fw.type_keys(text, with_spaces=True)
+                        if with_enter:
+                            fw.type_keys("{ENTER}")
+                        return ok_json(
+                            data={
+                                "sent": True,
+                                "with_enter": with_enter,
+                                "via": "foreground_winforms_modal",
+                                "hwnd": fg,
+                                "class_name": cls,
+                                "size": {"w": rw, "h": rh},
+                            },
+                            message="send_keys",
+                            request_id=rid,
+                        )
             except Exception:
                 pass
         w = _resolve_top_window(process_name, title_contains)

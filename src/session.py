@@ -6,6 +6,7 @@ import os
 import sys
 from typing import Any
 
+from src import uia_tools
 from src import update as update_mod
 from src.protocol import PROTOCOL_VERSION
 
@@ -25,6 +26,7 @@ def _safe_env(name: str) -> str | None:
 
 def agent_session_payload() -> dict[str, Any]:
     ver = update_mod.server_version_dict()
+    ver.update(uia_tools.uia_revision_payload())
     tools = [
         {"name": "health", "role": "проверка живости; всегда вызывать первым при сомнениях в сети"},
         {"name": "agent_session", "role": "этот снимок: версия протокола, шаги, env"},
@@ -41,7 +43,7 @@ def agent_session_payload() -> dict[str, Any]:
         },
         {
             "name": "uia_modal_ok",
-            "role": "закрыть MessageBox/модалку (OK/ОК): UIA + Win32 (owned nCAD, дочерние Button, GetDlgItem); data.via / hwnd / owner_hwnd для отчёта",
+            "role": "закрыть MessageBox / WinForms-модалку LEP (OK/ОК): UIA child + обход Button + Accept {ENTER}; Win32 #32770; приоритет owned nCAD; data.via / hwnd для отчёта",
         },
         {
             "name": "uia_modal_titlebar_close",
@@ -66,7 +68,7 @@ def agent_session_payload() -> dict[str, Any]:
         {"name": "wait_for_element", "role": "ожидание элемента; ERR_TIMEOUT если не дождались"},
         {
             "name": "send_keys",
-            "role": "ввод текста: если на переднем плане модалка #32770 — фокус на неё; иначе process_name/title_contains + SetForegroundWindow; затем capture_* и uia_list",
+            "role": "ввод текста: передний план — модалка #32770 или малое WinForms окна nCAD.exe (см. via); иначе process_name/title_contains + SetForegroundWindow; затем capture_* и uia_list",
         },
         {
             "name": "capture_window",
@@ -88,12 +90,17 @@ def agent_session_payload() -> dict[str, Any]:
             "name": "action_json_log_recent",
             "role": "Хвост JSONL-лога успешных шагов (MCP_ACTION_JSONL): entries[].action_signature / replay_hint — чтобы не дублировать сценарий",
         },
+        {
+            "name": "learn_log_recent",
+            "role": "Хвост JSONL корпуса наблюдений (MCP_LEARN_JSONL): policy=none — сервер не использует эти данные при кликах; только offline / будущее распознавание",
+        },
     ]
     workflow = [
         "1) Вызвать health — убедиться, что JSON парсится и ok=true.",
-        "2) Вызвать agent_session — прочитать protocol_version и рекомендуемые инструменты.",
+        "2) Вызвать agent_session — прочитать protocol_version, server.uia_tools_revision / uia_modal_title_pattern_sha12 (сверка с репо после деплоя) и рекомендуемые инструменты.",
         "2a) С нуля или после перезагрузки ВМ: nanocad_lep_prepare (journal в data.steps) — затем capture_window + capture_monitor для визуальной проверки палитры.",
         "2c) Если на сервере задан MCP_ACTION_JSONL — при успешных шагах (фильтр lep_only по умолчанию) дописываются JSONL-строки; перед длинным сценарием вызвать action_json_log_recent и пропускать уже имеющиеся action_signature.",
+        "2e) Если задан MCP_LEARN_JSONL — в отдельный файл дописываются наблюдения (kind=cursor_interaction, policy=none); они **не влияют** на uia_click/capture и не читаются сервером при принятии решений. learn_log_recent — только просмотр хвоста для агента.",
         "2d) Декларативные сценарии: каталог scenarios/ + scripts/run_lep_scenario.py — промпт для агента; capture_window/capture_monitor: filename_suffix или out_path (MCP_CAPTURE_DIR).",
         "2b) LEP: перед кликами по вкладкам палитры — capture_window + capture_monitor (include_base64=true) и проверить на картинке, "
         "что панель LEP слева открыта (заголовок LEP, вкладки). Если палитры нет — клик по командной строке automation_id 1011, "
@@ -146,7 +153,11 @@ def agent_session_payload() -> dict[str, Any]:
             "MCP_LEP_COMMAND": _safe_env("MCP_LEP_COMMAND"),
             "MCP_ACTION_JSONL": _safe_env("MCP_ACTION_JSONL"),
             "MCP_ACTION_JSONL_FILTER": _safe_env("MCP_ACTION_JSONL_FILTER"),
+            "MCP_LEARN_JSONL": _safe_env("MCP_LEARN_JSONL"),
+            "MCP_LEARN_FILTER": _safe_env("MCP_LEARN_FILTER"),
+            "MCP_LEARN_INCLUDE_FAILURES": _safe_env("MCP_LEARN_INCLUDE_FAILURES"),
             "MCP_CAPTURE_DIR": _safe_env("MCP_CAPTURE_DIR"),
+            "MCP_MODAL_POLL_SEC": _safe_env("MCP_MODAL_POLL_SEC"),
             "cwd": os.getcwd(),
             "argv0": sys.argv[0] if sys.argv else "",
         },

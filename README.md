@@ -59,7 +59,12 @@ pip install -r requirements.txt
 | `MCP_LEP_COMMAND` | Строка команды для вызова палитры LEP из командной строки nanoCAD (по умолчанию **`LEP`**). Используется инструментом **`nanocad_lep_prepare`**, если параметр **`lep_command`** не передан. |
 | `MCP_ACTION_JSONL` | Путь к файлу **JSONL** (одна строка = один JSON): успешные (`ok=true`) вызовы инструментов после фильтра. Пусто — логирование выключено. Каталог создаётся при первой записи. |
 | `MCP_ACTION_JSONL_FILTER` | **`lep_only`** (по умолчанию) — только шаги, связанные с nanoCAD/LEP/модалками и т.п.; **`all`** — любой успешный инструмент. |
+| `MCP_LEARN_JSONL` | Отдельный путь к **JSONL корпуса наблюдений** (`kind=cursor_interaction`, **`policy=none`**): параметры и краткий итог вызовов для **offline** / будущего распознавания. Пусто — канал выключен. Сервер **не читает** этот файл при UIA/capture и **не принимает** решений на его основе. |
+| `MCP_LEARN_FILTER` | **`lep_only`** (по умолчанию) \| **`all`** — та же эвристика CAD/LEP, что у `MCP_ACTION_JSONL_FILTER`. |
+| `MCP_LEARN_INCLUDE_FAILURES` | **`1`** / **`true`** — дописывать в корпус также вызовы с **`ok=false`** (краткий `message_excerpt`); иначе только успешные. |
 | `MCP_CAPTURE_DIR` | Каталог для PNG, когда у **`capture_window`** / **`capture_monitor`** задан **`filename_suffix`**, но не задан **`out_path`**. Пусто — системный temp. |
+| `MCP_MODAL_POLL_SEC` | Интервал опроса в **`uia_modal_ok`** / **`uia_modal_titlebar_close`** (секунды, по умолчанию **0.12**; было жёстко 0.25). Допустимый диапазон 0.03…2. |
+| `MCP_SENDKEYS_MODAL_MAX_W` / `MCP_SENDKEYS_MODAL_MAX_H` | Макс. размер окна на переднем плане, чтобы **`send_keys`** считал его модалкой (**`#32770`** или **WinForms** в процессе **`nCAD.exe`**) и слал клавиши в него, а не в главное окно. По умолчанию 1400×950. |
 | `MCP_UPDATE_USE_PS1` | **`1`** — на Windows выполнять [scripts/update_server.ps1](scripts/update_server.ps1) вместо встроенного Python-пути (удобно для единой политики обновлений). |
 | `MCP_AUTH_TOKEN` | (Опционально) если позже добавите reverse-proxy с проверкой Bearer — см. ниже. |
 | `MCP_PYTHON` | Полный путь к `python.exe` для [scripts/setup_local.ps1](scripts/setup_local.ps1), если `python` не в PATH. |
@@ -91,8 +96,8 @@ $env:MCP_REPO_ROOT="D:\LEP"
 Агент в чате **не может** сам «подписаться» на ваш MCP: серверы задаются **в Cursor на вашем Mac** (файл настроек MCP / JSON в настройках). После сохранения конфига и перезапуска Cursor **тот же** агент в новых чатах сможет вызывать инструменты этого сервера, если Cursor их отдаёт в сессию.
 
 1. **Cursor → Settings → MCP** (или правка JSON MCP вручную).
-2. В корневой объект **`mcpServers`** добавьте блок из примера [cursor-mcp.example.json](cursor-mcp.example.json) (HTTPS + Bearer за прокси) или [cursor-mcp.via-ssh-tunnel.example.json](cursor-mcp.via-ssh-tunnel.example.json) (локальный порт после туннеля).
-3. Поле **`url`**: для прямого теста по сети — `http://<хост>:8765/mcp`; в бою лучше **TLS + токен** на прокси.
+2. В корневой объект **`mcpServers`** добавьте блок из примера [cursor-mcp.example.json](cursor-mcp.example.json) (там зафиксирован актуальный **LAN**-эндпоинт `http://195.209.212.86:8765/mcp`; за прокси — HTTPS + Bearer) или [cursor-mcp.via-ssh-tunnel.example.json](cursor-mcp.via-ssh-tunnel.example.json) (локальный порт после туннеля).
+3. Поле **`url`**: для прямого теста по сети — `http://<хост>:8765/mcp` (см. пример выше); в бою лучше **TLS + токен** на прокси.
 4. **`headers`**: при reverse-proxy с Bearer — `Authorization: Bearer ...`; если прокси не проверяет токен, можно оставить пустой объект или убрать ключ по документации вашей версии Cursor.
 5. Полный **перезапуск Cursor** после изменения конфига.
 
@@ -105,6 +110,16 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 В MCP укажите `http://127.0.0.1:18765/mcp` (порт `18765` можно заменить на свободный).
 
 **Важно:** в разных версиях Cursor поведение удалённого MCP может отличаться; при сбоях см. [форум Cursor](https://forum.cursor.com) (темы про remote SSE/HTTP).
+
+### Модалки LEP (WinForms и MessageBox)
+
+- **`uia_modal_ok`**: кроме Win32 **`#32770`**, учитываются малые окна **`WindowsForms10.Window…`**, в т.ч. **owned** главным окном nanoCAD; поиск кнопки OK — прямой UIA, затем обход **`Button`**, затем **`{ENTER}`** (AcceptButton).
+- **`send_keys`**: если на переднем плане маленькое WinForms-окно в процессе **`nCAD.exe`**, ввод уходит в него (**`data.via`: `foreground_winforms_modal`**), как для системной модалки **`#32770`**.
+- После деплоя сравните **`agent_session` → `server.uia_tools_revision`** с ожидаемым значением в репозитории — так видно, что ВМ подтянула код.
+
+### Корпус наблюдений (learn-only)
+
+При заданном **`MCP_LEARN_JSONL`** после инструментов (тот же хук, что и для replay-лога) дописываются строки с **`policy: "none"`**: это **не** обучение в runtime и **не** влияние на клики. Данные предназначены для выгрузки и последующей обработки вне сервера. Инструмент **`learn_log_recent`** — только просмотр хвоста файла. В записи **нет** `png_base64`.
 
 ## Контракт ответов и коммуникация агента
 
@@ -158,6 +173,7 @@ ssh -N -L 18765:127.0.0.1:8765 user@<ваш-windows-хост>
 | `launch_process` | Запуск `.exe` на Windows (отдельный процесс). Нужен **`MCP_ALLOW_LAUNCH=1`**; иначе `ERR_FORBIDDEN`. **`executable`**: полный путь или **`AUTO_NANOCAD`** / **`AUTO`** — поиск `nCAD.exe` в PATH и типичных каталогах Nanosoft. После старта ждёт появления процесса в UIA (`wait_timeout_sec`). |
 | `nanocad_lep_prepare` | Сценарий «nanoCAD + палитра LEP»: проверка UIA **`nCAD.exe`** → при необходимости **`launch_process` (AUTO_NANOCAD)** → серия **`uia_modal_ok`** / **`uia_modal_titlebar_close`** → клик командной строки (**`1011`**) → **`send_keys`** (команда из **`lep_command`** / **`MCP_LEP_COMMAND`** / **`LEP`**) → **`wait_for_element`** на **`lep_palette_root`**. Реализация: **`src/nanocad_bootstrap.py`**. При уже открытой палитре повторный ввод команды не выполняется (`data.skipped_command_input`). |
 | `action_json_log_recent` | Чтение **последних** записей из **`MCP_ACTION_JSONL`** (`data.entries`: `action_signature`, `replay_hint`, `params`, `response_summary`). Если лог не настроен — `data.enabled=false`. Используйте для пропуска уже выполненных шагов в повторном прогоне. |
+| `learn_log_recent` | Чтение **последних** записей из **`MCP_LEARN_JSONL`** (`policy=none`, без влияния на инструменты). Если корпус выключен — `data.enabled=false`. |
 
 **Формат строки лога** (append, UTF-8): `logged_at_utc`, `tool`, `request_id`, **`action_signature`** (SHA-256 от tool+params, 24 hex — стабильный ключ шага), **`replay_hint`**, `params` (без секретов; длинные строки усечены), `response_summary`, `protocol_version`.
 
