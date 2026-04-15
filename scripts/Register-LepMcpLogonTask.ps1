@@ -9,7 +9,9 @@
   Запуск: PowerShell от имени администратора (опционально), при необходимости поправьте пути.
 
 .PARAMETER McpRoot
-  Каталог windows-mcp-server (где лежат src\, scripts\, .venv\).
+  Корень репозитория на диске (каталог, где лежат src\, scripts\, .venv\) — например
+  C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker
+  (не родитель Desktop\windows-mcp-server без вложенной папки клона, и без опечатки map_min → map_win).
 
 .PARAMETER PythonExe
   Полный путь к python.exe (по умолчанию: McpRoot\.venv\Scripts\python.exe).
@@ -26,6 +28,19 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$McpRoot = $McpRoot.Trim().TrimEnd('\', '/')
+if (-not (Test-Path -LiteralPath $McpRoot)) {
+    $hint = ""
+    if ($McpRoot -match 'map_min_server_clicker') {
+        $alt = $McpRoot -replace 'map_min_server_clicker', 'map_win_server_clicker'
+        if (Test-Path -LiteralPath $alt) {
+            $hint = " Найден похожий путь (опечатка min→win): $alt — используйте его в -McpRoot."
+        } else {
+            $hint = " Проверьте опечатку: часто нужно map_win_server_clicker, а не map_min_server_clicker."
+        }
+    }
+    throw "Каталог не существует: $McpRoot.$hint Укажите -McpRoot на корень клона (где есть src\server.py)."
+}
 $McpRoot = (Resolve-Path -LiteralPath $McpRoot).Path
 if (-not $PythonExe) {
     $PythonExe = Join-Path $McpRoot ".venv\Scripts\python.exe"

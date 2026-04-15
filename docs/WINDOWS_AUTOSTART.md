@@ -17,9 +17,14 @@
 
 ## Рекомендуемый вариант: задача планировщика при входе пользователя
 
-Скрипт (запуск **от администратора** при необходимости, пути поправьте):
+Скрипт (запуск **от администратора** при необходимости; **`-McpRoot`** — каталог **клона**, где лежат `src\` и `.venv\`, например `C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker`, а не опечатка `map_min_server_clicker`):
 
 [`scripts/Register-LepMcpLogonTask.ps1`](../scripts/Register-LepMcpLogonTask.ps1)
+
+```powershell
+cd C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker
+.\scripts\Register-LepMcpLogonTask.ps1 -McpRoot "C:\Users\Admin\Desktop\windows-mcp-server\map_win_server_clicker"
+```
 
 - Триггер: **вход в систему** выбранного пользователя.
 - Поведение: **только при входе пользователя** (не «в фоне без входа») — сохраняется доступ к столу для UIA.
