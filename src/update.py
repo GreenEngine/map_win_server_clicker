@@ -14,7 +14,7 @@ from typing import Any
 # Версия логики self-update (для agent_session / отладки): git для git_pull|full через Python; дефолт режима — full.
 _SELF_UPDATE_LOGIC_KEY = "python-git-first-default-full-2026-04-15"
 # Временная метка для проверки git pull на ВМ (можно удалить после приёмки).
-_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-pushtest-5"
+_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-pushtest-6"
 
 
 def _server_root() -> Path:
@@ -322,6 +322,54 @@ def _origin_default_branch_short(root: Path) -> str:
     return ""
 
 
+def _git_prefer_main_when_remote_tips_differ(root: Path, branch: str) -> str:
+    """
+    Клон, где ``origin/HEAD`` всё ещё на ``master``, а актуальные коммиты уходят в ``origin/main``:
+    после ``fetch`` SHA ``origin/main`` и ``origin/master`` разные — тянем **main**, иначе self-update
+    остаётся на устаревшем master.
+    """
+    if branch not in ("master", "main"):
+        return ""
+    for ref_name in ("main", "master"):
+        chk = subprocess.run(
+            ["git", "show-ref", "--verify", f"refs/remotes/origin/{ref_name}"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if chk.returncode != 0:
+            return ""
+    try:
+        p_m = subprocess.run(
+            ["git", "rev-parse", "origin/main"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        p_s = subprocess.run(
+            ["git", "rev-parse", "origin/master"],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if p_m.returncode != 0 or p_s.returncode != 0:
+            return ""
+        om = (p_m.stdout or "").strip()
+        osm = (p_s.stdout or "").strip()
+        if not om or not osm or om == osm:
+            return ""
+        _self_update_trace(
+            "git: origin/main и origin/master указывают на разные коммиты "
+            f"(локальная ветка {branch!r}) → pull target=main"
+        )
+        return "main"
+    except Exception:
+        return ""
+
+
 def _update_sync_requested() -> bool:
     """Старый режим: git/pip блокируют ответ server_update до конца (отладка)."""
     return os.environ.get("MCP_UPDATE_SYNC", "").strip().lower() in ("1", "true", "yes")
@@ -388,9 +436,12 @@ def _git_fetch_pull_ff_only(root: Path, lines: list[str], run) -> None:
     if remote_default:
         _self_update_trace(f"git: origin/HEAD -> {remote_default!r}")
 
-    # Локально checkout на master, а на GitHub основная линия — main: pull origin master
-    # не двигает HEAD, пока на origin/main приходят коммиты. Тянем ветку по умолчанию удалённого.
-    if (
+    force_main = _git_prefer_main_when_remote_tips_differ(root, branch)
+    target = ""
+    if force_main:
+        target = force_main
+    # Локально master, origin/HEAD -> main (или наоборот): тянем ветку по умолчанию удалённого.
+    elif (
         branch in ("master", "main")
         and remote_default
         and _has_origin_ref(remote_default)
@@ -424,8 +475,10 @@ def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
 
     Алгоритм (удалённое обновление с агента через server_update):
     1) Режим: pip | git_pull | full (по умолчанию снаружи — full).
-    2) full/git_pull: в Python — ``git fetch origin``, выбор ветки (HEAD → origin/имя, иначе main/master),
-       затем ``git pull --ff-only origin <ветка>`` в MCP_REPO_ROOT / корне .git рядом с сервером.
+    2) full/git_pull: в Python — ``git fetch origin``, выбор ветки: если ``origin/main`` и ``origin/master``
+       оба есть и указывают на **разные** коммиты — при локальной ``master``/``main`` тянем **main**;
+       иначе при расхождении локальной ветки с ``origin/HEAD`` — ветка из ``origin/HEAD``; иначе
+       локальная ветка / fallback ``main``/``master``. Затем ``git pull --ff-only origin <ветка>``.
     3) Windows + MCP_UPDATE_USE_PS1: ``update_server.ps1 -SkipGit`` — только pip в .venv (кэш pip/temp в каталоге сервера).
        Иначе pip: ``python -m pip install -r requirements.txt`` тем же интерпретатором, что запустил MCP.
     4) По логу git/pip решается, планировать ли os._exit + helper перезапуска (см. _needs_process_restart_after_update).

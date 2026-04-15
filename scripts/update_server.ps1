@@ -49,10 +49,19 @@ if (-not $SkipGit -and (Test-Path (Join-Path $RepoRoot ".git"))) {
             $remoteDefault = $Matches[1].Trim()
         }
         $target = ""
-        if (($branch -eq "master" -or $branch -eq "main") -and $remoteDefault -and (Test-OriginRef $remoteDefault) -and $remoteDefault -ne $branch) {
+        if (($branch -eq "master" -or $branch -eq "main") -and (Test-OriginRef "main") -and (Test-OriginRef "master")) {
+            $omSha = (git rev-parse origin/main).Trim()
+            $msSha = (git rev-parse origin/master).Trim()
+            if ($omSha -and $msSha -and $omSha -ne $msSha) {
+                $target = "main"
+                Write-Host "Git: origin/main and origin/master differ -> pull main (local $branch)"
+            }
+        }
+        if (-not $target -and ($branch -eq "master" -or $branch -eq "main") -and $remoteDefault -and (Test-OriginRef $remoteDefault) -and $remoteDefault -ne $branch) {
             $target = $remoteDefault
             Write-Host "Git pull target from origin/HEAD: $target (local branch $branch)"
-        } else {
+        }
+        if (-not $target) {
             foreach ($b in @($branch, "main", "master")) {
                 if (Test-OriginRef $b) { $target = $b; break }
             }
