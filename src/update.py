@@ -251,6 +251,44 @@ def _append_self_update_log(block: str) -> None:
         pass
 
 
+def _self_update_trace(message: str) -> None:
+    """
+    Потоковая строка в logs/mcp_self_update.log с flush — удобно `Get-Content -Wait` / tail во время server_update.
+    Дублирование в stderr: MCP_SELF_UPDATE_TRACE_STDERR=1 (true/yes).
+    """
+    path = _self_update_log_path()
+    ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    line = f"{ts} [SELF_UPDATE] {message}\n"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line)
+            f.flush()
+    except Exception:
+        pass
+    if os.environ.get("MCP_SELF_UPDATE_TRACE_STDERR", "").strip().lower() in ("1", "true", "yes"):
+        try:
+            sys.stderr.write(line)
+            sys.stderr.flush()
+        except Exception:
+            pass
+
+
+def _git_head_short(repo: Path) -> str:
+    try:
+        p = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if p.returncode == 0:
+            return (p.stdout or "").strip() or "?"
+    except Exception:
+        pass
+    return "?"
+
+
 def _update_sync_requested() -> bool:
     """Старый режим: git/pip блокируют ответ server_update до конца (отладка)."""
     return os.environ.get("MCP_UPDATE_SYNC", "").strip().lower() in ("1", "true", "yes")
@@ -284,9 +322,15 @@ def _git_fetch_pull_ff_only(root: Path, lines: list[str], run) -> None:
     """fetch origin + pull --ff-only на явную ветку origin/<name> (как у удалённого), без слабого голого pull."""
     git_dir = root / ".git"
     if not git_dir.exists():
-        lines.append(f"Пропуск git pull: нет {git_dir}")
+        msg = f"Пропуск git pull: нет {git_dir}"
+        lines.append(msg)
+        _self_update_trace(msg)
         return
+    head0 = _git_head_short(root)
+    _self_update_trace(f"git: start repo={root} HEAD(before)={head0}")
+    _self_update_trace("git: running `git fetch origin` (Python subprocess)")
     run(["git", "fetch", "origin"], cwd=root)
+    _self_update_trace("git: fetch origin finished (rc=0 if no exception above)")
     branch_probe = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=str(root),
@@ -295,6 +339,7 @@ def _git_fetch_pull_ff_only(root: Path, lines: list[str], run) -> None:
         timeout=20,
     )
     branch = (branch_probe.stdout or "").strip() or "main"
+    _self_update_trace(f"git: local branch (abbrev-ref)={branch!r}")
 
     def _has_origin_ref(ref_name: str) -> bool:
         chk = subprocess.run(
@@ -313,15 +358,28 @@ def _git_fetch_pull_ff_only(root: Path, lines: list[str], run) -> None:
         target = "master"
 
     if target:
+        _self_update_trace(f"git: running `git pull --ff-only origin {target}`")
         run(["git", "pull", "--ff-only", "origin", target], cwd=root)
     else:
+        _self_update_trace("git: no origin/<branch> match; fallback `git pull --ff-only`")
         run(["git", "pull", "--ff-only"], cwd=root)
+    head1 = _git_head_short(root)
+    _self_update_trace(f"git: done HEAD(after)={head1}")
 
 
 def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
     """
     Синхронное обновление (долгий git/pip). Вызывать из фонового потока по умолчанию.
     Returns: (success, log_text, restart_scheduled)
+
+    Алгоритм (удалённое обновление с агента через server_update):
+    1) Режим: pip | git_pull | full (по умолчанию снаружи — full).
+    2) full/git_pull: в Python — ``git fetch origin``, выбор ветки (HEAD → origin/имя, иначе main/master),
+       затем ``git pull --ff-only origin <ветка>`` в MCP_REPO_ROOT / корне .git рядом с сервером.
+    3) Windows + MCP_UPDATE_USE_PS1: ``update_server.ps1 -SkipGit`` — только pip в .venv (кэш pip/temp в каталоге сервера).
+       Иначе pip: ``python -m pip install -r requirements.txt`` тем же интерпретатором, что запустил MCP.
+    4) По логу git/pip решается, планировать ли os._exit + helper перезапуска (см. _needs_process_restart_after_update).
+    Шаги 2–3 пишутся в logs/mcp_self_update.log: многострочный блок в конце + строки [SELF_UPDATE] с меткой времени по ходу.
     """
     if os.environ.get("MCP_ALLOW_SELF_UPDATE", "").strip() not in ("1", "true", "True", "yes", "YES"):
         return (
@@ -359,6 +417,10 @@ def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
     if mode_err:
         return False, mode_err, False
     try:
+        _self_update_trace(
+            f"impl begin mode={mode_l} pid={os.getpid()} repo_root={root} server_root={srv} "
+            f"sync_env={_update_sync_requested()} HEAD={_git_head_short(root)}"
+        )
         use_ps1 = False
         ps1 = _server_root() / "scripts" / "update_server.ps1"
         if sys.platform == "win32" and os.environ.get("MCP_UPDATE_USE_PS1", "").strip().lower() not in (
@@ -371,8 +433,13 @@ def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
             else:
                 lines.append(f"Нет скрипта {ps1}, выполняем встроенное обновление…")
 
+        _self_update_trace(f"flags: use_ps1={use_ps1} platform={sys.platform!r}")
+
         if mode_l in ("git_pull", "full"):
+            _self_update_trace(f"step: Python git (mode={mode_l})")
             _git_fetch_pull_ff_only(root, lines, run)
+        elif mode_l == "pip":
+            _self_update_trace("step: skip Python git (mode=pip)")
 
         if use_ps1:
             cmd = [
@@ -387,7 +454,9 @@ def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
                 "-SkipGit",
             ]
             want_ps_restart = _restart_after_update_enabled()
+            _self_update_trace(f"step: PowerShell pip only script={ps1.name} cwd={_server_root()}")
             run(cmd, cwd=_server_root())
+            _self_update_trace("step: PowerShell update_server.ps1 (-SkipGit) finished")
             lines.append(
                 "Скрипт update_server.ps1: только pip (venv при наличии); git для режимов git_pull/full "
                 "выполняется в Python (git fetch + pull --ff-only origin/<ветка>)."
@@ -396,6 +465,7 @@ def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
             if want_ps_restart and _needs_process_restart_after_update(joined, mode_l):
                 schedule_restart_after_update()
                 restart_scheduled = True
+                _self_update_trace("restart: schedule_restart_after_update() (PS1 path)")
                 lines.append(
                     "Перезапуск MCP запланирован (~2.5 с + helper mcp_restart_after_update.py). "
                     "Журнал helper: logs/mcp_restart_helper.log (или MCP_RESTART_LOG); stderr нового процесса: logs/mcp_server_stderr.log."
@@ -410,13 +480,16 @@ def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
             return True, "\n".join(lines), restart_scheduled
 
         if mode_l in ("pip", "full", "git_pull"):
+            _self_update_trace(f"step: pip via current interpreter exe={sys.executable!r} req={req}")
             run([sys.executable, "-m", "pip", "install", "-r", str(req)])
+            _self_update_trace("step: pip install -r requirements.txt finished")
 
         lines.append("Готово.")
         joined = "\n".join(lines)
         if _restart_after_update_enabled() and _needs_process_restart_after_update(joined, mode_l):
             schedule_restart_after_update()
             restart_scheduled = True
+            _self_update_trace("restart: schedule_restart_after_update() (pip-only / no-PS1 path)")
             lines.append(
                 "Перезапуск процесса MCP запланирован (через ~2 с). См. logs/mcp_restart_helper.log и logs/mcp_server_stderr.log."
             )
@@ -431,14 +504,18 @@ def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
             )
         return True, "\n".join(lines), restart_scheduled
     except Exception as e:
+        _self_update_trace(f"ERROR exception: {e!s}")
         return False, "\n".join(lines) + f"\nERROR: {e!s}", False
 
 
 def _self_update_worker(mode: str) -> None:
     try:
+        _self_update_trace(f"worker thread start mode={mode!r} name={threading.current_thread().name!r}")
         ok, text, rs = _run_self_update_impl(mode)
+        _self_update_trace(f"worker thread end ok={ok} restart_scheduled={rs}")
         _append_self_update_log(f"ok={ok} restart_scheduled={rs}\n{text}")
     except Exception as e:
+        _self_update_trace(f"worker FATAL: {e!s}")
         _append_self_update_log(f"ok=False restart_scheduled=False\nFATAL: {e!s}")
     finally:
         with _self_update_state["lock"]:
@@ -465,14 +542,17 @@ def run_self_update(mode: str | None = "full") -> tuple[bool, str, bool, bool]:
 
     mode_n, mode_err = _normalize_self_update_mode(mode)
     if mode_err:
+        _self_update_trace(f"run_self_update: rejected invalid mode raw={mode!r}")
         return False, mode_err, False, False
 
     if _update_sync_requested():
+        _self_update_trace(f"run_self_update: SYNC mode={mode_n!r} (blocking until git/pip end)")
         ok, text, rs = _run_self_update_impl(mode_n)
         return ok, text, rs, False
 
     with _self_update_state["lock"]:
         if _self_update_state["running"]:
+            _self_update_trace("run_self_update: rejected (already running in background)")
             return (
                 False,
                 "server_update already running in background; see logs/mcp_self_update.log",
@@ -481,6 +561,10 @@ def run_self_update(mode: str | None = "full") -> tuple[bool, str, bool, bool]:
             )
         _self_update_state["running"] = True
 
+    _self_update_trace(
+        f"run_self_update: queued ASYNC mode={mode_n!r} pid={os.getpid()} "
+        f"log={_self_update_log_path()} (tail this file for [SELF_UPDATE] lines)"
+    )
     threading.Thread(target=_self_update_worker, args=(mode_n,), daemon=True).start()
     log_path = _self_update_log_path()
     brief = (
