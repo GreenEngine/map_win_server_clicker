@@ -251,10 +251,19 @@ def _append_self_update_log(block: str) -> None:
         pass
 
 
+def _self_update_stderr_mirror_enabled() -> bool:
+    """По умолчанию дублируем [SELF_UPDATE] в stderr — видно в консоли рядом с Uvicorn. Отключить: MCP_SELF_UPDATE_TRACE_STDERR=0."""
+    v = os.environ.get("MCP_SELF_UPDATE_TRACE_STDERR", "").strip().lower()
+    if v in ("0", "false", "no"):
+        return False
+    return True
+
+
 def _self_update_trace(message: str) -> None:
     """
     Потоковая строка в logs/mcp_self_update.log с flush — удобно `Get-Content -Wait` / tail во время server_update.
-    Дублирование в stderr: MCP_SELF_UPDATE_TRACE_STDERR=1 (true/yes).
+    По умолчанию те же строки пишутся в **stderr** (консоль, где запущен server.py / Uvicorn).
+    Только файл: MCP_SELF_UPDATE_TRACE_STDERR=0.
     """
     path = _self_update_log_path()
     ts = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -266,7 +275,7 @@ def _self_update_trace(message: str) -> None:
             f.flush()
     except Exception:
         pass
-    if os.environ.get("MCP_SELF_UPDATE_TRACE_STDERR", "").strip().lower() in ("1", "true", "yes"):
+    if _self_update_stderr_mirror_enabled():
         try:
             sys.stderr.write(line)
             sys.stderr.flush()
