@@ -55,6 +55,9 @@ def validate_scenario(data: dict[str, Any], path: Path | str) -> None:
             raise ValueError(f"Отсутствует обязательное поле: {key} ({path})")
     if int(data["version"]) != 1:
         raise ValueError(f"Поддерживается только version=1, получено: {data['version']}")
+    sofe = data.get("stop_on_first_error")
+    if sofe is not None and not isinstance(sofe, bool):
+        raise ValueError("stop_on_first_error должен быть boolean, если задан")
     steps = data.get("steps")
     if not isinstance(steps, list) or not steps:
         raise ValueError("Нужен непустой массив steps")
@@ -102,10 +105,17 @@ def run_scenario_json(
     """
     Выполняет steps по порядку. get_tool(name) -> callable MCP tool returning JSON string.
 
+    Если в корне сценария ``stop_on_first_error: false`` — после ошибки шага выполнение продолжается;
+    в конце ``all_ok`` ложен, если хотя бы один шаг не ``ok``.
+
     Returns (all_ok, step_log).
     """
     if sys.platform != "win32":
         return False, [{"error": "ERR_PLATFORM", "message": "run_scenario_json только на Windows"}]
+
+    stop_on_first_error = data.get("stop_on_first_error", True)
+    if not isinstance(stop_on_first_error, bool):
+        stop_on_first_error = True
 
     log: list[dict[str, Any]] = []
     prefix = (id_prefix or "lep_run")[:48]
@@ -128,9 +138,10 @@ def run_scenario_json(
             entry["message"] = body.get("message")
             entry["raw_excerpt"] = (raw or "")[:800]
         log.append(entry)
-        if not ok:
+        if not ok and stop_on_first_error:
             return False, log
-    return True, log
+    all_ok = all(bool(e.get("ok")) for e in log)
+    return all_ok, log
 
 
 def resolve_scenario_path_under_root(scenario_name: str, scenarios_root: Path) -> Path:

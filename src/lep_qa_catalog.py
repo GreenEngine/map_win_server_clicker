@@ -108,6 +108,8 @@ def lep_qa_catalog_payload() -> dict[str, Any]:
         ],
         "note": "Полный приёмочный прогон = подготовка nanoCAD + пара capture после каждого изменения UI + uia_list_subtree; см. agent_session.workflow",
         "primary_acceptance_scenario": "lep_mcp_full_operability_smoke.json",
+        "extended_palette_uia_scenario": "lep_plugin_full_palette_uia.json",
+        "extended_palette_note": "Полный обход главных вкладок LEP + подвкладки Трасса по automation_id (QA_UiaIds); stop_on_first_error=false — полный step_log даже при частичных сбоях; lep_run_scenario на ВМ.",
         "primary_acceptance_lep_run_scenario": 'lep_run_scenario("lep_mcp_full_operability_smoke.json") на ВМ — один MCP-вызов для критериев product-delivery A–E',
         "orchestrator_product_delivery": {
             "repo_track": "pytest/diff в репозитории — не заменяет UI на ВМ.",

@@ -517,17 +517,29 @@ def lep_run_scenario(
 
     prefix = str(data.get("id", "scenario"))[:40]
     ok, log = lep_scenario_runner.run_scenario_json(data, get_tool=_get_tool, id_prefix=prefix)
+    failed_ns = [e["n"] for e in log if not e.get("ok")]
+    base_data: dict[str, Any] = {
+        "scenario": str(path),
+        "steps_run": len(log),
+        "step_log": log,
+        "all_steps_ok": ok,
+        "failed_step_numbers": failed_ns,
+        "stop_on_first_error": bool(data.get("stop_on_first_error", True)),
+    }
     if ok:
-        return ok_json(
-            data={"scenario": str(path), "steps_run": len(log), "step_log": log},
-            message="lep_run_scenario",
+        return ok_json(data=base_data, message="lep_run_scenario", request_id=rid)
+    last = log[-1] if log else {}
+    if data.get("stop_on_first_error") is False and len(log) == len(data.get("steps") or []):
+        return err_json(
+            "ERR_SCENARIO_PARTIAL",
+            f"Сценарий выполнен полностью; ошибки на шагах: {failed_ns}",
+            data=base_data,
             request_id=rid,
         )
-    last = log[-1] if log else {}
     return err_json(
         str(last.get("code") or "ERR_SCENARIO_STEP"),
         str(last.get("message") or "step failed"),
-        data={"scenario": str(path), "step_log": log},
+        data=base_data,
         request_id=rid,
     )
 

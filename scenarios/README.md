@@ -10,6 +10,7 @@
 | `title` | да | Человекочитаемое название. |
 | `version` | да | Число схемы; сейчас только **1**. |
 | `skip_nanocad_lep_prepare` | нет | Если `true`, в промпте не требовать шаг `nanocad_lep_prepare` (CAD уже поднят). |
+| `stop_on_first_error` | нет | По умолчанию **true**: при `ok: false` у шага сценарий останавливается. **`false`** — выполняются все шаги; итог **`lep_run_scenario`**: `data.all_steps_ok`, `ERR_SCENARIO_PARTIAL`, если были ошибки. |
 | `requires` | нет | Объект: `golden_dwg` (bool) — напоминание про `LEP_GOLDEN_DWG`; `note` (string). |
 | `steps` | да | Массив шагов по порядку. |
 
@@ -43,6 +44,10 @@
 - Проверка только JSON: `python scripts/execute_lep_scenario_local.py --scenario scenarios/lep_mcp_full_operability_smoke.json --validate-only` (из каталога `windows-mcp-server`, `PYTHONPATH=.`).
 
 Критерии A–F в **`.cursor/skills/product-delivery/SKILL.md`** (раздел «Критерий полная работоспособность»).
+
+## Расширенный UI-прогон палитры (все вкладки)
+
+Файл **[`lep_plugin_full_palette_uia.json`](lep_plugin_full_palette_uia.json)** — обход **всех** главных вкладок по `automation_id` из **`ALL/Docs/QA_UiaIds.md`**, подвкладки **Трасса**, пары **`capture_*`** после каждого клика; **`stop_on_first_error: false`** для полного журнала. Вызов: **`lep_run_scenario("lep_plugin_full_palette_uia.json")`** (долгий прогон, десятки шагов).
 
 ## Старая матрица 10×
 

@@ -1,0 +1,531 @@
+{
+  "id": "lep_plugin_full_palette_uia",
+  "title": "LEP: все главные вкладки + подвкладки Трасса (UIA automation_id), снимки после каждого клика",
+  "version": 1,
+  "stop_on_first_error": false,
+  "skip_nanocad_lep_prepare": false,
+  "requires": {
+    "golden_dwg": false,
+    "note": "Соответствует ALL/Docs/QA_UiaIds.md. При частичных ERR_NOT_FOUND сценарий всё равно доходит до конца (stop_on_first_error=false)."
+  },
+  "steps": [
+    {
+      "n": 1,
+      "invoke": "health",
+      "args": {},
+      "expect": "ok"
+    },
+    {
+      "n": 2,
+      "invoke": "agent_session",
+      "args": {},
+      "expect": "ревизии MCP"
+    },
+    {
+      "n": 3,
+      "invoke": "lep_qa_catalog",
+      "args": {},
+      "expect": "каталог"
+    },
+    {
+      "n": 4,
+      "invoke": "nanocad_lep_prepare",
+      "args": {
+        "skip_launch_if_running": true
+      },
+      "expect": "палитра"
+    },
+    {
+      "n": 5,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_gate_win"
+      },
+      "expect": "палитра"
+    },
+    {
+      "n": 6,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_gate_mon"
+      },
+      "expect": "экран"
+    },
+    {
+      "n": 7,
+      "invoke": "uia_list_subtree",
+      "args": {
+        "process_name": "nCAD.exe",
+        "anchor_automation_id": "lep_palette_root",
+        "max_depth": 14,
+        "max_nodes": 2000
+      },
+      "expect": "дерево"
+    },
+    {
+      "n": 8,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_route",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_route"
+    },
+    {
+      "n": 9,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_route_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 10,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_route_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 11,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_drawings",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_drawings"
+    },
+    {
+      "n": 12,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_drawings_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 13,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_drawings_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 14,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_extra_data",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_extra_data"
+    },
+    {
+      "n": 15,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_extra_data_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 16,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_extra_data_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 17,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_calculations",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_calculations"
+    },
+    {
+      "n": 18,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_calculations_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 19,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_calculations_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 20,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_library",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_library"
+    },
+    {
+      "n": 21,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_library_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 22,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_library_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 23,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_rag",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_rag"
+    },
+    {
+      "n": 24,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_rag_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 25,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_rag_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 26,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_sync",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_sync"
+    },
+    {
+      "n": 27,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_sync_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 28,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_sync_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 29,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_settings",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_settings"
+    },
+    {
+      "n": 30,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_settings_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 31,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_settings_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 32,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_admin",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_admin"
+    },
+    {
+      "n": 33,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_admin_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 34,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_admin_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 35,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_ui",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_ui"
+    },
+    {
+      "n": 36,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_ui_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 37,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_ui_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 38,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_tab_journal",
+        "nth": 0
+      },
+      "expect": "вкладка lep_tab_journal"
+    },
+    {
+      "n": 39,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_journal_win"
+      },
+      "expect": "скрин окна"
+    },
+    {
+      "n": 40,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_after_lep_tab_journal_mon"
+      },
+      "expect": "скрин монитора"
+    },
+    {
+      "n": 41,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_subtab_route_create",
+        "nth": 0
+      },
+      "expect": "подвкладка lep_subtab_route_create"
+    },
+    {
+      "n": 42,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_route_create_win"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 43,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_route_create_mon"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 44,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_subtab_route_manual",
+        "nth": 0
+      },
+      "expect": "подвкладка lep_subtab_route_manual"
+    },
+    {
+      "n": 45,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_route_manual_win"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 46,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_route_manual_mon"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 47,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_subtab_route_analysis",
+        "nth": 0
+      },
+      "expect": "подвкладка lep_subtab_route_analysis"
+    },
+    {
+      "n": 48,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_route_analysis_win"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 49,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_route_analysis_mon"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 50,
+      "invoke": "uia_list_subtree",
+      "args": {
+        "process_name": "nCAD.exe",
+        "anchor_automation_id": "lep_palette_root",
+        "max_depth": 12,
+        "max_nodes": 1500
+      },
+      "expect": "финальное дерево"
+    }
+  ]
+}
