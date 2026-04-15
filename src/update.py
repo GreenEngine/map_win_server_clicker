@@ -13,6 +13,8 @@ from typing import Any
 
 # Версия логики self-update (для agent_session / отладки): git для git_pull|full через Python; дефолт режима — full.
 _SELF_UPDATE_LOGIC_KEY = "python-git-first-default-full-2026-04-15"
+# Временная метка для проверки git pull на ВМ (можно удалить после приёмки).
+_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-1"
 
 
 def _server_root() -> Path:
@@ -60,6 +62,7 @@ def server_version_dict() -> dict[str, Any]:
         "platform": sys.platform,
         "git_short": rev or None,
         "self_update_logic": _SELF_UPDATE_LOGIC_KEY,
+        "deploy_verify_probe": _DEPLOY_VERIFY_PROBE,
         "summary": f"windows-mcp-server root={srv}; python={sys.version.split()[0]}; git={rev or 'n/a'}",
     }
 
