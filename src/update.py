@@ -14,7 +14,7 @@ from typing import Any
 # Версия логики self-update (для agent_session / отладки): git для git_pull|full через Python; дефолт режима — full.
 _SELF_UPDATE_LOGIC_KEY = "python-git-first-default-full-2026-04-15"
 # Временная метка для проверки git pull на ВМ (можно удалить после приёмки).
-_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-pushtest-7"
+_DEPLOY_VERIFY_PROBE = "mcp-pull-ring-20260415-pushtest-8"
 
 
 def _server_root() -> Path:
@@ -458,7 +458,27 @@ def _git_fetch_pull_ff_only(root: Path, lines: list[str], run) -> None:
         if not target and _has_origin_ref("master"):
             target = "master"
 
+    def _tip_short(rrev: str) -> str:
+        try:
+            p = subprocess.run(
+                ["git", "rev-parse", "--short", rrev],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if p.returncode == 0:
+                return ((p.stdout or "").strip() or "?")[:12]
+        except Exception:
+            pass
+        return "?"
+
     if target:
+        if _has_origin_ref(target):
+            _self_update_trace(
+                f"git: before pull refs/remotes/origin/{target}={_tip_short(f'refs/remotes/origin/{target}')} "
+                f"HEAD={_tip_short('HEAD')}"
+            )
         _self_update_trace(f"git: running `git pull --ff-only origin {target}`")
         run(["git", "pull", "--ff-only", "origin", target], cwd=root)
     else:
@@ -466,6 +486,34 @@ def _git_fetch_pull_ff_only(root: Path, lines: list[str], run) -> None:
         run(["git", "pull", "--ff-only"], cwd=root)
     head1 = _git_head_short(root)
     _self_update_trace(f"git: done HEAD(after)={head1}")
+
+    # Если pull не сдвинул HEAD (часто: shallow, гонка с пушем, редкий баг pull), — unshallow + повтор fetch/merge.
+    if head1 == head0 and target:
+        shallow = root / ".git" / "shallow"
+        if shallow.is_file():
+            _self_update_trace("git: shallow clone (.git/shallow) → `git fetch --unshallow`")
+            lines.append(f"$ git fetch --unshallow (cwd={root})")
+            pu = subprocess.run(
+                ["git", "fetch", "--unshallow"],
+                cwd=str(root),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            if pu.stdout:
+                lines.append(pu.stdout.strip())
+            if pu.stderr:
+                lines.append("stderr:\n" + pu.stderr.strip())
+            if pu.returncode != 0:
+                lines.append(f"(unshallow exit {pu.returncode}, продолжаем)")
+                _self_update_trace(f"git: unshallow exit {pu.returncode}, continue")
+            else:
+                _self_update_trace("git: unshallow finished")
+        _self_update_trace(f"git: retry `git fetch origin` + `git merge --ff-only origin/{target}`")
+        run(["git", "fetch", "origin"], cwd=root)
+        run(["git", "merge", "--ff-only", f"origin/{target}"], cwd=root)
+        head1 = _git_head_short(root)
+        _self_update_trace(f"git: HEAD(after retry)={head1}")
 
 
 def _run_self_update_impl(mode: str = "full") -> tuple[bool, str, bool]:
