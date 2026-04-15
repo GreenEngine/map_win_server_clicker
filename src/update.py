@@ -77,7 +77,7 @@ def schedule_restart_after_update() -> None:
     srv = _server_root()
     helper = srv / "scripts" / "mcp_restart_after_update.py"
     server_py = srv / "src" / "server.py"
-    if not helper.is_file() or not server_py.is_file():
+    if not server_py.is_file():
         return
 
     python_exe = sys.executable
@@ -89,25 +89,46 @@ def schedule_restart_after_update() -> None:
         try:
             # Дать клиенту получить JSON-ответ server_update до выхода процесса.
             time.sleep(2.5)
-            cf = 0
             if sys.platform == "win32":
+                # Для запуска из PowerShell/терминала надёжнее запускать новый server.py
+                # через отдельный powershell Start-Process с задержкой: старый процесс успеет
+                # освободить порт до старта нового.
+                def _sq(v: str) -> str:
+                    return v.replace("'", "''")
+
+                ps_cmd = (
+                    "Start-Sleep -Seconds 4; "
+                    f"Start-Process -FilePath '{_sq(python_exe)}' "
+                    f"-ArgumentList '{_sq(str(server_py))}' "
+                    f"-WorkingDirectory '{_sq(cwd)}' -WindowStyle Hidden"
+                )
                 cf = int(getattr(subprocess, "DETACHED_PROCESS", 0x00000008))
                 cf |= int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200))
                 cf |= int(getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
-            subprocess.Popen(
-                [python_exe, str(helper), str(pid), python_exe, str(server_py), cwd],
-                cwd=cwd,
-                creationflags=cf if sys.platform == "win32" else 0,
-                start_new_session=sys.platform != "win32",
-                close_fds=True,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            time.sleep(0.5)
-            ok_spawn = True
+                subprocess.Popen(
+                    ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps_cmd],
+                    cwd=cwd,
+                    creationflags=cf,
+                    close_fds=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                ok_spawn = True
+            else:
+                if not helper.is_file():
+                    return
+                subprocess.Popen(
+                    [python_exe, str(helper), str(pid), python_exe, str(server_py), cwd],
+                    cwd=cwd,
+                    start_new_session=True,
+                    close_fds=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                ok_spawn = True
         except Exception as e:
-            # Раньше except: pass скрывал сбой Popen — процесс не завершался, новый код не подхватывался.
             try:
                 sys.stderr.write(f"mcp_restart_after_update spawn failed: {e!r}\n")
                 sys.stderr.flush()
