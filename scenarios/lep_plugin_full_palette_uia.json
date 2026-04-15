@@ -1,6 +1,6 @@
 {
   "id": "lep_plugin_full_palette_uia",
-  "title": "LEP: все главные вкладки + подвкладки Трасса (UIA automation_id), снимки после каждого клика",
+  "title": "LEP: все главные вкладки + подвкладки Трасса (включая КЛ 6–20/0.4/Экран СПЭ), UIA automation_id, снимки после каждого клика",
   "version": 1,
   "stop_on_first_error": false,
   "skip_nanocad_lep_prepare": false,
@@ -518,6 +518,102 @@
     },
     {
       "n": 50,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_subtab_calc_620",
+        "nth": 0
+      },
+      "expect": "подвкладка lep_subtab_calc_620"
+    },
+    {
+      "n": 51,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_calc_620_win"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 52,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_calc_620_mon"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 53,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_subtab_calc_04",
+        "nth": 0
+      },
+      "expect": "подвкладка lep_subtab_calc_04"
+    },
+    {
+      "n": 54,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_calc_04_win"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 55,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_calc_04_mon"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 56,
+      "invoke": "uia_click",
+      "args": {
+        "process_name": "nCAD.exe",
+        "automation_id": "lep_subtab_screen_spe",
+        "nth": 0
+      },
+      "expect": "подвкладка lep_subtab_screen_spe"
+    },
+    {
+      "n": 57,
+      "invoke": "capture_window",
+      "args": {
+        "process_name": "nCAD.exe",
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_screen_spe_win"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 58,
+      "invoke": "capture_monitor",
+      "args": {
+        "monitor_index": 1,
+        "include_base64": true,
+        "max_edge_px": 900,
+        "filename_suffix": "fullpal_sub_lep_subtab_screen_spe_mon"
+      },
+      "expect": "скрин"
+    },
+    {
+      "n": 59,
       "invoke": "uia_list_subtree",
       "args": {
         "process_name": "nCAD.exe",
